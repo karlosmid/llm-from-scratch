@@ -22,7 +22,8 @@ defmodule LlmScratch.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:tiktoken, "~> 0.4.1"}
+      {:tiktoken, "~> 0.4.1"},
+      {:pythonx, "~> 0.4.0"}
     ]
   end
 end
