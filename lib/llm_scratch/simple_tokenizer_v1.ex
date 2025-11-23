@@ -2,12 +2,15 @@ defmodule LlmScratch.SimpleTokenizerV1 do
   @moduledoc """
   A simple tokenizer that tokenizes text into words.
   """
-  def vocab_from_file(filename) do
+  def vocab_from_file(filename, special_tokens \\ []) do
     {:ok, file_content} = File.read(filename)
 
-    tokenize(file_content)
-    |> MapSet.new()
-    |> Enum.sort()
+    tokens =
+      tokenize(file_content)
+      |> MapSet.new()
+      |> Enum.sort()
+
+    (tokens ++ special_tokens)
     |> Enum.with_index()
   end
 
@@ -17,18 +20,26 @@ defmodule LlmScratch.SimpleTokenizerV1 do
       Enum.find(vocab, fn {vocab_token, _} -> token == vocab_token end)
       |> case do
         {_, id} -> id
-        nil -> raise "Token not found in vocab: #{token}"
+        nil -> find_unknown_token(vocab, token)
       end
     end)
   end
 
-  def decode(tokens, vocab) do
+  defp find_unknown_token(vocab, token) do
+    Enum.find(vocab, fn {vocab_token, _} -> vocab_token == "<|unk|>" end)
+    |> case do
+      {_, id} -> id
+      nil -> raise "Token not found in vocab: #{token}"
+    end
+  end
+
+  def decode(ids, vocab) do
     text =
-      Enum.map(tokens, fn token ->
-        Enum.find(vocab, fn {_, id} -> id == token end)
+      Enum.map(ids, fn id ->
+        Enum.find(vocab, fn {_, vocab_id} -> id == vocab_id end)
         |> case do
-          {token, _} -> token
-          nil -> raise "Token not found in vocab: #{token}"
+          {vocab_token, _} -> vocab_token
+          nil -> raise "ID not found in vocab: #{id}"
         end
       end)
       |> Enum.join(" ")

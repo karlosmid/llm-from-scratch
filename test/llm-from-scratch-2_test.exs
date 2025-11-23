@@ -284,6 +284,61 @@ defmodule LlmFromScratch2Test do
              "\" It' s the last he painted, you know,\" Mrs. Gisburn said with pardonable pride."
   end
 
+  test "missing token in vocab raises an error" do
+    vocab = LlmScratch.SimpleTokenizerV1.vocab_from_file("the-verdict.txt")
+    text = "Hello, do you like tea. Is this-- a test?"
+
+    assert_raise RuntimeError, "Token not found in vocab: Hello", fn ->
+      LlmScratch.SimpleTokenizerV1.encode(text, vocab)
+    end
+  end
+
+  test "encode and decode text with special token" do
+    vocab =
+      LlmScratch.SimpleTokenizerV1.vocab_from_file("the-verdict.txt", ["<|endoftext|>", "<|unk|>"])
+
+    assert length(vocab) == 1132
+    last_five = Enum.take(vocab, -5)
+
+    assert last_five == [
+             {"younger", 1127},
+             {"your", 1128},
+             {"yourself", 1129},
+             {"<|endoftext|>", 1130},
+             {"<|unk|>", 1131}
+           ]
+
+    text1 = "Hello, do you like tea?"
+    text2 = "In the sunlit terraces of the palace."
+    text = text1 <> " <|endoftext|> " <> text2
+
+    assert text == "Hello, do you like tea? <|endoftext|> In the sunlit terraces of the palace."
+
+    assert LlmScratch.SimpleTokenizerV1.encode(text, vocab) == [
+             1131,
+             5,
+             355,
+             1126,
+             628,
+             975,
+             10,
+             1130,
+             55,
+             988,
+             956,
+             984,
+             722,
+             988,
+             1131,
+             7
+           ]
+
+    assert text
+           |> LlmScratch.SimpleTokenizerV1.encode(vocab)
+           |> LlmScratch.SimpleTokenizerV1.decode(vocab) ==
+             "<|unk|>, do you like tea? <|endoftext|> In the sunlit terraces of the <|unk|>."
+  end
+
   test "encode and decode text with special token preserves original text", %{
     model: model,
     special_token: special_token
