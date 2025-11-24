@@ -339,6 +339,67 @@ defmodule LlmFromScratch2Test do
              "<|unk|>, do you like tea? <|endoftext|> In the sunlit terraces of the <|unk|>."
   end
 
+  test "byte pair encoding using gpt2 tiktoken" do
+    model = "code-davinci-002"
+
+    text = "Hello, do you like tea? <|endoftext|> In the sunlit terraces\of someunknownPlace."
+
+    {:ok, encoded_tokens} = Tiktoken.encode(model, text, ["<|endoftext|>"])
+
+    assert encoded_tokens == [
+             15496,
+             11,
+             466,
+             345,
+             588,
+             8887,
+             30,
+             220,
+             50256,
+             554,
+             262,
+             4252,
+             18250,
+             8812,
+             2114,
+             1659,
+             617,
+             34680,
+             27271,
+             13
+           ]
+
+    assert Tiktoken.decode(model, encoded_tokens) == {:ok, text}
+  end
+
+  test "data sampling with sliding window" do
+    {:ok, file_content} = File.read("the-verdict.txt")
+    model = "code-davinci-002"
+    {:ok, encoded_tokens} = Tiktoken.encode(model, file_content)
+
+    assert length(encoded_tokens) == 5145
+    encoded_last_50 = Enum.drop(encoded_tokens, 50)
+    context_size = 4
+    assert Enum.slice(encoded_last_50, 0..(context_size - 1)) == [290, 4920, 2241, 287]
+    assert Enum.slice(encoded_last_50, 1..context_size) == [4920, 2241, 287, 257]
+
+    1..context_size
+    |> Enum.each(fn index ->
+      context = Enum.slice(encoded_last_50, 0..(index - 1))
+      desired = Enum.at(encoded_last_50, index)
+      IO.inspect([context: context, desired: desired], charlists: :as_lists)
+    end)
+
+    1..context_size
+    |> Enum.each(fn index ->
+      context = Enum.slice(encoded_last_50, 0..(index - 1))
+      desired = Enum.at(encoded_last_50, index)
+      {:ok, decoded_context} = Tiktoken.decode(model, context)
+      {:ok, decoded_desired} = Tiktoken.decode(model, [desired])
+      IO.inspect("#{decoded_context} ----> #{decoded_desired}")
+    end)
+  end
+
   test "encode and decode text with special token preserves original text", %{
     model: model,
     special_token: special_token
