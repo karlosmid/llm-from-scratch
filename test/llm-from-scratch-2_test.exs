@@ -383,21 +383,97 @@ defmodule LlmFromScratch2Test do
     assert Enum.slice(encoded_last_50, 0..(context_size - 1)) == [290, 4920, 2241, 287]
     assert Enum.slice(encoded_last_50, 1..context_size) == [4920, 2241, 287, 257]
 
-    1..context_size
-    |> Enum.each(fn index ->
-      context = Enum.slice(encoded_last_50, 0..(index - 1))
-      desired = Enum.at(encoded_last_50, index)
-      IO.inspect([context: context, desired: desired], charlists: :as_lists)
-    end)
+    context = Enum.slice(encoded_last_50, 0..(context_size - 1))
+    desired = Enum.at(encoded_last_50, context_size)
+    {:ok, decoded_context} = Tiktoken.decode(model, context)
+    {:ok, decoded_desired} = Tiktoken.decode(model, [desired])
+    assert decoded_context == " and established himself in"
+    assert decoded_desired == " a"
+  end
 
-    1..context_size
-    |> Enum.each(fn index ->
-      context = Enum.slice(encoded_last_50, 0..(index - 1))
-      desired = Enum.at(encoded_last_50, index)
-      {:ok, decoded_context} = Tiktoken.decode(model, context)
-      {:ok, decoded_desired} = Tiktoken.decode(model, [desired])
-      IO.inspect("#{decoded_context} ----> #{decoded_desired}")
-    end)
+  test "chunk dataset" do
+    txt = "Hello, do you like tea? <|endoftext|> In the sunlit terraces of someunknownPlace."
+    model = "code-davinci-002"
+    max_length = 10 - 1
+    stride = 5
+    chunks = LlmScratch.GptDatasetV1.chunk_dataset(txt, model, max_length, stride)
+    assert length(chunks) == 2
+
+    [input_chunks: input_chunks, target_chunks: target_chunks] = chunks
+
+    assert input_chunks == [
+             Nx.tensor([15496, 11, 466, 345, 588, 8887, 30, 220, 50256]),
+             Nx.tensor([8887, 30, 220, 50256, 554, 262, 4252, 18250, 8812]),
+             Nx.tensor([262, 4252, 18250, 8812, 2114, 286, 617, 34680, 27271])
+           ]
+
+    assert target_chunks == [
+             Nx.tensor([11, 466, 345, 588, 8887, 30, 220, 50256, 554]),
+             Nx.tensor([30, 220, 50256, 554, 262, 4252, 18250, 8812, 2114]),
+             Nx.tensor([4252, 18250, 8812, 2114, 286, 617, 34680, 27271, 13])
+           ]
+  end
+
+  test "gpt dataset v1" do
+    {:ok, file_content} = File.read("the-verdict.txt")
+
+    dataloader =
+      LlmScratch.GptDatasetV1.create_dataloader_v1(
+        raw_text: file_content,
+        batch_size: 1,
+        max_length: 4,
+        stride: 1,
+        shuffle: false,
+        drop_last: false,
+        num_workers: 0
+      )
+
+    batch = dataloader.stream |> Enum.at(0)
+    [{input_chunk, _target_chunk}] = batch
+    assert input_chunk == Nx.tensor([40, 367, 2885, 1464])
+  end
+
+  test "gpt dataset v1, batch_size is 8" do
+    {:ok, file_content} = File.read("the-verdict.txt")
+
+    dataloader =
+      LlmScratch.GptDatasetV1.create_dataloader_v1(
+        raw_text: file_content,
+        batch_size: 8,
+        max_length: 4,
+        stride: 4,
+        shuffle: false,
+        drop_last: false,
+        num_workers: 0
+      )
+
+    batch = dataloader.stream |> Enum.at(0)
+    # Each item in batch is {input_chunk, target_chunk}
+    {input_chunks, target_chunks} = Enum.unzip(batch)
+    assert length(input_chunks) == 8
+    assert length(target_chunks) == 8
+
+    assert input_chunks == [
+             Nx.tensor([40, 367, 2885, 1464]),
+             Nx.tensor([1807, 3619, 402, 271]),
+             Nx.tensor([10899, 2138, 257, 7026]),
+             Nx.tensor([15632, 438, 2016, 257]),
+             Nx.tensor([922, 5891, 1576, 438]),
+             Nx.tensor([568, 340, 373, 645]),
+             Nx.tensor([1049, 5975, 284, 502]),
+             Nx.tensor([284, 3285, 326, 11])
+           ]
+
+    assert target_chunks == [
+             Nx.tensor([367, 2885, 1464, 1807]),
+             Nx.tensor([3619, 402, 271, 10899]),
+             Nx.tensor([2138, 257, 7026, 15632]),
+             Nx.tensor([438, 2016, 257, 922]),
+             Nx.tensor([5891, 1576, 438, 568]),
+             Nx.tensor([340, 373, 645, 1049]),
+             Nx.tensor([5975, 284, 502, 284]),
+             Nx.tensor([3285, 326, 11, 287])
+           ]
   end
 
   test "encode and decode text with special token preserves original text", %{
