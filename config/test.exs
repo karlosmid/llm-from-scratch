@@ -10,4 +10,8 @@ config :pythonx, :uv_init,
   name = "llm_scratch_test"
   version = "0.1.0"
   requires-python = ">=3.11"
+  dependencies = [
+    "torch",
+    "numpy"
+  ]
   """

@@ -476,6 +476,76 @@ defmodule LlmFromScratch2Test do
            ]
   end
 
+  test "PyTorch-style Embedding with manual_seed (torch.nn.Embedding equivalent)" do
+    # PyTorch equivalent:
+    # torch.manual_seed(42)
+    # embedding = torch.nn.Embedding(vocab_size=6, embedding_dim=3)
+    # token_ids = torch.tensor([[2, 3, 5, 1]])
+    # embeddings = embedding(token_ids)
+
+    vocab_size = 6
+    embedding_dim = 3
+
+    embedding = LlmScratch.Embedding.new(vocab_size, embedding_dim, seed: 123)
+
+    # Verify the embedding struct
+    assert embedding.vocab_size == vocab_size
+    assert embedding.embedding_dim == embedding_dim
+
+    # Test weight access (equivalent to embedding_layer.weight in PyTorch)
+    weight = LlmScratch.Embedding.weight(embedding)
+
+    # Expected PyTorch weights with seed=123, vocab_size=6, embedding_dim=3
+    expected_weight =
+      Nx.tensor(
+        [
+          [0.3373701572418213, -0.1777772158384323, -0.16895616054534912],
+          [0.9177640080451965, 1.5809690952301025, 1.3010399341583252],
+          [1.275301218032837, -0.20095309615135193, -0.16056379675865173],
+          [-0.40148791670799255, 0.966571569442749, -1.1481444835662842],
+          [-1.158868670463562, 0.32547101378440857, -0.6315054297447205],
+          [-2.839993953704834, -0.7848533391952515, -1.4095723628997803]
+        ],
+        type: {:f, 32}
+      )
+
+    # Assert that weights match PyTorch exactly (using small tolerance for floating point)
+    assert Nx.all_close(weight, expected_weight, atol: 1.0e-6),
+           "Embedding weights should match PyTorch's weights exactly with seed=123"
+
+    # Get specific row from tensor (row 3, which is index 3)
+    # Method 1: Using Nx.slice/4 (recommended for tensors)
+    row_3 = Nx.slice(weight, [3, 0], [1, embedding_dim]) |> Nx.squeeze(axes: [0])
+
+    expected_row_3 =
+      Nx.tensor([-0.40148791670799255, 0.966571569442749, -1.1481444835662842], type: {:f, 32})
+
+    assert Nx.all_close(row_3, expected_row_3, atol: 1.0e-6)
+
+    # Test forward pass: mapping input_ids to embeddings (equivalent to embedding_layer(input_ids))
+    # PyTorch: embeddings = embedding_layer(input_ids)
+    input_ids = Nx.tensor([[2, 3, 5, 1]], type: {:s, 64})
+    embeddings = LlmScratch.Embedding.forward(embedding, input_ids)
+
+    # Expected forward pass output with seed=123, input_ids=[[2, 3, 5, 1]]
+    expected_forward =
+      Nx.tensor(
+        [
+          [
+            [1.275301218032837, -0.20095309615135193, -0.16056379675865173],
+            [-0.40148791670799255, 0.966571569442749, -1.1481444835662842],
+            [-2.839993953704834, -0.7848533391952515, -1.4095723628997803],
+            [0.9177640080451965, 1.5809690952301025, 1.3010399341583252]
+          ]
+        ],
+        type: {:f, 32}
+      )
+
+    # Verify embeddings match expected output exactly
+    assert Nx.all_close(embeddings, expected_forward, atol: 1.0e-6),
+           "Embeddings from forward pass should match expected values exactly"
+  end
+
   test "encode and decode text with special token preserves original text", %{
     model: model,
     special_token: special_token

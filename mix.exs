@@ -25,7 +25,8 @@ defmodule LlmScratch.MixProject do
       {:tiktoken, "~> 0.4.1"},
       {:pythonx, "~> 0.4.0"},
       {:nx, "~> 0.6"},
-      {:exla, "~> 0.6"}
+      {:exla, "~> 0.6"},
+      {:axon, "~> 0.6"}
     ]
   end
 end
