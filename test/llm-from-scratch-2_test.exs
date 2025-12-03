@@ -478,7 +478,7 @@ defmodule LlmFromScratch2Test do
 
   test "PyTorch-style Embedding with manual_seed (torch.nn.Embedding equivalent)" do
     # PyTorch equivalent:
-    # torch.manual_seed(42)
+    # torch.manual_seed(123)
     # embedding = torch.nn.Embedding(vocab_size=6, embedding_dim=3)
     # token_ids = torch.tensor([[2, 3, 5, 1]])
     # embeddings = embedding(token_ids)
@@ -544,6 +544,75 @@ defmodule LlmFromScratch2Test do
     # Verify embeddings match expected output exactly
     assert Nx.all_close(embeddings, expected_forward, atol: 1.0e-6),
            "Embeddings from forward pass should match expected values exactly"
+  end
+
+  test "positional embedding" do
+    vocab_size = 50257
+    embedding_dim = 256
+
+    token_embeding_layer = LlmScratch.Embedding.new(vocab_size, embedding_dim, seed: 123)
+
+    {:ok, file_content} = File.read("the-verdict.txt")
+
+    dataloader =
+      LlmScratch.GptDatasetV1.create_dataloader_v1(
+        raw_text: file_content,
+        batch_size: 8,
+        max_length: 4,
+        stride: 4,
+        shuffle: false,
+        drop_last: false,
+        num_workers: 0
+      )
+
+    batch = dataloader.stream |> Enum.at(0)
+    inputs_list = Enum.map(batch, fn {input, _target} -> input end)
+    
+    # Stack list of tensors into a single tensor: [tensor1, tensor2, ...] -> tensor with shape [batch_size, seq_len]
+    inputs = Nx.stack(inputs_list)
+
+    expected_inputs =
+      [
+        [40, 367, 2885, 1464],
+        [1807, 3619, 402, 271],
+        [10899, 2138, 257, 7026],
+        [15632, 438, 2016, 257],
+        [922, 5891, 1576, 438],
+        [568, 340, 373, 645],
+        [1049, 5975, 284, 502],
+        [284, 3285, 326, 11]
+      ]
+      |> Nx.tensor(type: {:s, 32})
+
+    # Verify inputs match expected output exactly
+    assert Nx.all_close(inputs, expected_inputs, atol: 1.0e-6),
+           "Input embeddings should match expected values exactly"
+
+    # Assert the size/shape of inputs is [8, 4]
+    assert Nx.shape(inputs) == {8, 4}
+    
+    # Get token embeddings: shape [8, 4, 256]
+    token_embeddings = LlmScratch.Embedding.forward(token_embeding_layer, inputs)
+    assert Nx.shape(token_embeddings) == {8, 4, 256}
+
+    # Create positional embedding layer: vocab_size=4 (positions 0,1,2,3), embedding_dim=256
+    positional_embedding_layer = LlmScratch.Embedding.new(4, 256, seed: 123)
+    positional_embedding_weights = LlmScratch.Embedding.weight(positional_embedding_layer)
+    assert Nx.shape(positional_embedding_weights) == {4, 256}
+    
+    # Create positional indices: [0, 1, 2, 3] for each position in the sequence
+    # Shape: [4] -> expand to [1, 4] -> broadcast to [8, 4]
+    positional_indices = Nx.tensor([0, 1, 2, 3], type: {:s, 64})
+    positional_indices_batch = Nx.broadcast(Nx.new_axis(positional_indices, 0), {8, 4})
+    
+    # Get positional embeddings: shape [8, 4, 256]
+    positional_embeddings = LlmScratch.Embedding.forward(positional_embedding_layer, positional_indices_batch)
+    assert Nx.shape(positional_embeddings) == {8, 4, 256}
+
+    # Add token embeddings and positional embeddings: shape [8, 4, 256]
+    embeddings_sum = Nx.add(token_embeddings, positional_embeddings)
+    assert Nx.shape(embeddings_sum) == {8, 4, 256}
+    
   end
 
   test "encode and decode text with special token preserves original text", %{
