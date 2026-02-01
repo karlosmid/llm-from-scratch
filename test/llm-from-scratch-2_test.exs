@@ -16,8 +16,14 @@ defmodule LlmFromScratch2Test do
   end
 
   test "the-verdict.txt character count and exact line 99 content" do
-    # Read the file content as a single string
+    url =
+      "https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch02/01_main-chapter-code/the-verdict.txt"
+
     filename = "the-verdict.txt"
+    %Req.Response{status: 200, body: body} = Req.get!(url)
+    File.write!(filename, body)
+    # Read the file content as a single string
+    
     {:ok, file_content} = File.read(filename)
 
     # Assert on the number of characters in the file
@@ -567,7 +573,7 @@ defmodule LlmFromScratch2Test do
 
     batch = dataloader.stream |> Enum.at(0)
     inputs_list = Enum.map(batch, fn {input, _target} -> input end)
-    
+
     # Stack list of tensors into a single tensor: [tensor1, tensor2, ...] -> tensor with shape [batch_size, seq_len]
     inputs = Nx.stack(inputs_list)
 
@@ -590,7 +596,7 @@ defmodule LlmFromScratch2Test do
 
     # Assert the size/shape of inputs is [8, 4]
     assert Nx.shape(inputs) == {8, 4}
-    
+
     # Get token embeddings: shape [8, 4, 256]
     token_embeddings = LlmScratch.Embedding.forward(token_embeding_layer, inputs)
     assert Nx.shape(token_embeddings) == {8, 4, 256}
@@ -599,20 +605,21 @@ defmodule LlmFromScratch2Test do
     positional_embedding_layer = LlmScratch.Embedding.new(4, 256, seed: 123)
     positional_embedding_weights = LlmScratch.Embedding.weight(positional_embedding_layer)
     assert Nx.shape(positional_embedding_weights) == {4, 256}
-    
+
     # Create positional indices: [0, 1, 2, 3] for each position in the sequence
     # Shape: [4] -> expand to [1, 4] -> broadcast to [8, 4]
     positional_indices = Nx.tensor([0, 1, 2, 3], type: {:s, 64})
     positional_indices_batch = Nx.broadcast(Nx.new_axis(positional_indices, 0), {8, 4})
-    
+
     # Get positional embeddings: shape [8, 4, 256]
-    positional_embeddings = LlmScratch.Embedding.forward(positional_embedding_layer, positional_indices_batch)
+    positional_embeddings =
+      LlmScratch.Embedding.forward(positional_embedding_layer, positional_indices_batch)
+
     assert Nx.shape(positional_embeddings) == {8, 4, 256}
 
     # Add token embeddings and positional embeddings: shape [8, 4, 256]
     embeddings_sum = Nx.add(token_embeddings, positional_embeddings)
     assert Nx.shape(embeddings_sum) == {8, 4, 256}
-    
   end
 
   test "encode and decode text with special token preserves original text", %{
