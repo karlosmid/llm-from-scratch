@@ -386,15 +386,34 @@ defmodule LlmFromScratch2Test do
     assert length(encoded_tokens) == 5145
     encoded_last_50 = Enum.drop(encoded_tokens, 50)
     context_size = 4
-    assert Enum.slice(encoded_last_50, 0..(context_size - 1)) == [290, 4920, 2241, 287]
-    assert Enum.slice(encoded_last_50, 1..context_size) == [4920, 2241, 287, 257]
 
-    context = Enum.slice(encoded_last_50, 0..(context_size - 1))
-    desired = Enum.at(encoded_last_50, context_size)
-    {:ok, decoded_context} = Tiktoken.decode(model, context)
-    {:ok, decoded_desired} = Tiktoken.decode(model, [desired])
-    assert decoded_context == " and established himself in"
-    assert decoded_desired == " a"
+    context_desired_pairs =
+      for i <- 1..context_size do
+        context = Enum.slice(encoded_last_50, 0..(i - 1))
+        desired = Enum.at(encoded_last_50, i)
+        {context, desired}
+      end
+
+    assert context_desired_pairs == [
+             {[290], 4920},
+             {[290, 4920], 2241},
+             {[290, 4920, 2241], 287},
+             {[290, 4920, 2241, 287], 257}
+           ]
+
+    decoded_context_desired_pairs =
+      Enum.map(context_desired_pairs, fn {current_context, current_desired} ->
+        {:ok, decoded_current_context} = Tiktoken.decode(model, current_context)
+        {:ok, decoded_current_desired} = Tiktoken.decode(model, [current_desired])
+        {decoded_current_context, decoded_current_desired}
+      end)
+
+    assert decoded_context_desired_pairs == [
+             {" and", " established"},
+             {" and established", " himself"},
+             {" and established himself", " in"},
+             {" and established himself in", " a"}
+           ]
   end
 
   test "chunk dataset" do
