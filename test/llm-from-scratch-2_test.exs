@@ -441,6 +441,7 @@ defmodule LlmFromScratch2Test do
 
   test "gpt dataset v1" do
     {:ok, file_content} = File.read("the-verdict.txt")
+    model = "code-davinci-002"
 
     dataloader =
       LlmScratch.GptDatasetV1.create_dataloader_v1(
@@ -456,10 +457,12 @@ defmodule LlmFromScratch2Test do
     batch = dataloader.stream |> Enum.at(0)
     [{input_chunk, _target_chunk}] = batch
     assert input_chunk == Nx.tensor([40, 367, 2885, 1464])
+    assert decode_token_pieces(model, Nx.to_flat_list(input_chunk)) == ["I", " H", "AD", " always"]
   end
 
   test "gpt dataset v1, batch_size is 8" do
     {:ok, file_content} = File.read("the-verdict.txt")
+    model = "code-davinci-002"
 
     dataloader =
       LlmScratch.GptDatasetV1.create_dataloader_v1(
@@ -489,6 +492,17 @@ defmodule LlmFromScratch2Test do
              Nx.tensor([284, 3285, 326, 11])
            ]
 
+    assert Enum.map(input_chunks, &decode_token_pieces(model, Nx.to_flat_list(&1))) == [
+             ["I", " H", "AD", " always"],
+             [" thought", " Jack", " G", "is"],
+             ["burn", " rather", " a", " cheap"],
+             [" genius", "--", "though", " a"],
+             [" good", " fellow", " enough", "--"],
+             ["so", " it", " was", " no"],
+             [" great", " surprise", " to", " me"],
+             [" to", " hear", " that", ","]
+           ]
+
     assert target_chunks == [
              Nx.tensor([367, 2885, 1464, 1807]),
              Nx.tensor([3619, 402, 271, 10899]),
@@ -498,6 +512,17 @@ defmodule LlmFromScratch2Test do
              Nx.tensor([340, 373, 645, 1049]),
              Nx.tensor([5975, 284, 502, 284]),
              Nx.tensor([3285, 326, 11, 287])
+           ]
+
+    assert Enum.map(target_chunks, &decode_token_pieces(model, Nx.to_flat_list(&1))) == [
+             [" H", "AD", " always", " thought"],
+             [" Jack", " G", "is", "burn"],
+             [" rather", " a", " cheap", " genius"],
+             ["--", "though", " a", " good"],
+             [" fellow", " enough", "--", "so"],
+             [" it", " was", " no", " great"],
+             [" surprise", " to", " me", " to"],
+             [" hear", " that", ",", " in"]
            ]
   end
 
