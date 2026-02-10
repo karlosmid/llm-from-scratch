@@ -1,5 +1,5 @@
 defmodule LlmScratch.DataLoader do
-  def new(dataset, opts \\ []) do
+  def new(dataset, opts \\ []) when is_list(dataset) do
     batch_size = Keyword.get(opts, :batch_size, 32)
     shuffle = Keyword.get(opts, :shuffle, true)
     drop_last = Keyword.get(opts, :drop_last, false)
@@ -32,7 +32,6 @@ defmodule LlmScratch.DataLoader do
 
   defp prepare_dataset(dataset, true) do
     dataset
-    |> Enum.to_list()
     |> Enum.shuffle()
     |> Stream.cycle()
   end
