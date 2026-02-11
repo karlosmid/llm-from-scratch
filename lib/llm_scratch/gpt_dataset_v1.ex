@@ -1,4 +1,21 @@
 defmodule LlmScratch.GptDatasetV1 do
+  @doc """
+  Tokenizes `txt` and builds next-token prediction windows.
+
+  ## Parameters
+
+  - `txt` - input text to tokenize (`String.t()`)
+  - `model` - tokenizer model name passed to `Tiktoken.encode/3` (`String.t()`)
+  - `max_length` - number of tokens per input/target chunk (`pos_integer()`)
+  - `stride` - number of tokens to move between consecutive windows (`pos_integer()`)
+
+  Returns keyword list with:
+  - `:input_chunks` - list of input tensors shaped `{max_length}`
+  - `:target_chunks` - list of target tensors shaped `{max_length}`
+
+  Each target chunk is the corresponding input chunk shifted by one token.
+  Windows are generated with step `stride`.
+  """
   def chunk_dataset(txt, model, max_length, stride) do
     {:ok, token_ids} = Tiktoken.encode(model, txt, ["<|endoftext|>"])
 
@@ -25,6 +42,23 @@ defmodule LlmScratch.GptDatasetV1 do
     ]
   end
 
+  @doc """
+  Creates a `LlmScratch.DataLoader` from raw text using GPT-style input/target pairs.
+
+  ## Parameters
+
+  - `opts` - keyword options controlling dataset chunking and dataloader behavior
+
+  ## Options (`opts`)
+
+  - `:raw_text` (required) - source text to tokenize
+  - `:batch_size` (default: `4`) - number of `{input, target}` pairs per batch
+  - `:max_length` (default: `256`) - token length of each sequence chunk
+  - `:stride` (default: `128`) - step between consecutive windows
+  - `:shuffle` (default: `true`) - whether to shuffle dataset before cycling
+  - `:drop_last` (default: `true`) - whether to drop incomplete batches
+  - `:num_workers` (default: `0`) - worker count for async iteration
+  """
   def create_dataloader_v1(opts) do
     raw_text = Keyword.fetch!(opts, :raw_text)
     batch_size = Keyword.get(opts, :batch_size, 4)
