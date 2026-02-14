@@ -23,7 +23,7 @@ defmodule LlmFromScratch2Test do
     %Req.Response{status: 200, body: body} = Req.get!(url)
     File.write!(filename, body)
     # Read the file content as a single string
-    
+
     {:ok, file_content} = File.read(filename)
 
     # Assert on the number of characters in the file
@@ -454,10 +454,15 @@ defmodule LlmFromScratch2Test do
         num_workers: 0
       )
 
-    batch = dataloader.stream |> Enum.at(0)
-    [{input_chunk, _target_chunk}] = batch
-    assert input_chunk == Nx.tensor([40, 367, 2885, 1464])
-    assert decode_token_pieces(model, Nx.to_flat_list(input_chunk)) == ["I", " H", "AD", " always"]
+    batch_0 = dataloader.stream |> Enum.at(0)
+    [{input_chunk, target_chunk}] = batch_0
+    input_decoded_chunk = decode_token_pieces(model, Nx.to_flat_list(input_chunk))
+    target_decoded_chunk = decode_token_pieces(model, Nx.to_flat_list(target_chunk))
+    assert batch_0 == [{Nx.tensor([40, 367, 2885, 1464]), Nx.tensor([367, 2885, 1464, 1807])}]
+
+    assert [{input_decoded_chunk, target_decoded_chunk}] == [
+             {["I", " H", "AD", " always"], [" H", "AD", " always", " thought"]}
+           ]
   end
 
   test "gpt dataset v1, batch_size is 8" do
@@ -475,54 +480,92 @@ defmodule LlmFromScratch2Test do
         num_workers: 0
       )
 
-    batch = dataloader.stream |> Enum.at(0)
-    # Each item in batch is {input_chunk, target_chunk}
-    {input_chunks, target_chunks} = Enum.unzip(batch)
-    assert length(input_chunks) == 8
-    assert length(target_chunks) == 8
+    batch_0 = dataloader.stream |> Enum.at(0)
 
-    assert input_chunks == [
-             Nx.tensor([40, 367, 2885, 1464]),
-             Nx.tensor([1807, 3619, 402, 271]),
-             Nx.tensor([10899, 2138, 257, 7026]),
-             Nx.tensor([15632, 438, 2016, 257]),
-             Nx.tensor([922, 5891, 1576, 438]),
-             Nx.tensor([568, 340, 373, 645]),
-             Nx.tensor([1049, 5975, 284, 502]),
-             Nx.tensor([284, 3285, 326, 11])
+    decoded_batch_0 =
+      Enum.map(batch_0, fn {input_chunk, target_chunk} ->
+        {
+          decode_token_pieces(model, Nx.to_flat_list(input_chunk)),
+          decode_token_pieces(model, Nx.to_flat_list(target_chunk))
+        }
+      end)
+
+    assert batch_0 == [
+             {Nx.tensor([40, 367, 2885, 1464]), Nx.tensor([367, 2885, 1464, 1807])},
+             {Nx.tensor([1807, 3619, 402, 271]), Nx.tensor([3619, 402, 271, 10899])},
+             {Nx.tensor([10899, 2138, 257, 7026]), Nx.tensor([2138, 257, 7026, 15632])},
+             {Nx.tensor([15632, 438, 2016, 257]), Nx.tensor([438, 2016, 257, 922])},
+             {Nx.tensor([922, 5891, 1576, 438]), Nx.tensor([5891, 1576, 438, 568])},
+             {Nx.tensor([568, 340, 373, 645]), Nx.tensor([340, 373, 645, 1049])},
+             {Nx.tensor([1049, 5975, 284, 502]), Nx.tensor([5975, 284, 502, 284])},
+             {Nx.tensor([284, 3285, 326, 11]), Nx.tensor([3285, 326, 11, 287])}
            ]
 
-    assert Enum.map(input_chunks, &decode_token_pieces(model, Nx.to_flat_list(&1))) == [
-             ["I", " H", "AD", " always"],
-             [" thought", " Jack", " G", "is"],
-             ["burn", " rather", " a", " cheap"],
-             [" genius", "--", "though", " a"],
-             [" good", " fellow", " enough", "--"],
-             ["so", " it", " was", " no"],
-             [" great", " surprise", " to", " me"],
-             [" to", " hear", " that", ","]
+    assert decoded_batch_0 == [
+             {["I", " H", "AD", " always"], [" H", "AD", " always", " thought"]},
+             {[" thought", " Jack", " G", "is"], [" Jack", " G", "is", "burn"]},
+             {["burn", " rather", " a", " cheap"], [" rather", " a", " cheap", " genius"]},
+             {[" genius", "--", "though", " a"], ["--", "though", " a", " good"]},
+             {[" good", " fellow", " enough", "--"], [" fellow", " enough", "--", "so"]},
+             {["so", " it", " was", " no"], [" it", " was", " no", " great"]},
+             {[" great", " surprise", " to", " me"], [" surprise", " to", " me", " to"]},
+             {[" to", " hear", " that", ","], [" hear", " that", ",", " in"]}
+           ]
+  end
+
+  test "data loader drop_last true drops trailing incomplete batch from tuple dataset" do
+    dataset = [
+      {Nx.tensor([40, 367, 2885, 1464]), Nx.tensor([367, 2885, 1464, 1807])},
+      {Nx.tensor([1807, 3619, 402, 271]), Nx.tensor([3619, 402, 271, 10899])},
+      {Nx.tensor([10899, 2138, 257, 7026]), Nx.tensor([2138, 257, 7026, 15632])},
+      {Nx.tensor([15632, 438, 2016, 257]), Nx.tensor([438, 2016, 257, 922])},
+      {Nx.tensor([922, 5891, 1576, 438]), Nx.tensor([5891, 1576, 438, 568])},
+      {Nx.tensor([568, 340, 373, 645]), Nx.tensor([340, 373, 645, 1049])},
+      {Nx.tensor([1049, 5975, 284, 502]), Nx.tensor([5975, 284, 502, 284])},
+      {Nx.tensor([284, 3285, 326, 11]), Nx.tensor([3285, 326, 11, 287])}
+    ]
+
+    batch_size = 3
+
+    dataloader_keep_last =
+      LlmScratch.DataLoader.new(dataset, batch_size: batch_size, shuffle: false, drop_last: false)
+
+    dataloader_drop_last =
+      LlmScratch.DataLoader.new(dataset, batch_size: batch_size, shuffle: false, drop_last: true)
+
+    assert Enum.take(dataloader_keep_last.stream, 3) == [
+             [
+               {Nx.tensor([40, 367, 2885, 1464]), Nx.tensor([367, 2885, 1464, 1807])},
+               {Nx.tensor([1807, 3619, 402, 271]), Nx.tensor([3619, 402, 271, 10899])},
+               {Nx.tensor([10899, 2138, 257, 7026]), Nx.tensor([2138, 257, 7026, 15632])}
+             ],
+             [
+               {Nx.tensor([15632, 438, 2016, 257]), Nx.tensor([438, 2016, 257, 922])},
+               {Nx.tensor([922, 5891, 1576, 438]), Nx.tensor([5891, 1576, 438, 568])},
+               {Nx.tensor([568, 340, 373, 645]), Nx.tensor([340, 373, 645, 1049])}
+             ],
+             [
+               {Nx.tensor([1049, 5975, 284, 502]), Nx.tensor([5975, 284, 502, 284])},
+               {Nx.tensor([284, 3285, 326, 11]), Nx.tensor([3285, 326, 11, 287])}
+             ]
            ]
 
-    assert target_chunks == [
-             Nx.tensor([367, 2885, 1464, 1807]),
-             Nx.tensor([3619, 402, 271, 10899]),
-             Nx.tensor([2138, 257, 7026, 15632]),
-             Nx.tensor([438, 2016, 257, 922]),
-             Nx.tensor([5891, 1576, 438, 568]),
-             Nx.tensor([340, 373, 645, 1049]),
-             Nx.tensor([5975, 284, 502, 284]),
-             Nx.tensor([3285, 326, 11, 287])
-           ]
-
-    assert Enum.map(target_chunks, &decode_token_pieces(model, Nx.to_flat_list(&1))) == [
-             [" H", "AD", " always", " thought"],
-             [" Jack", " G", "is", "burn"],
-             [" rather", " a", " cheap", " genius"],
-             ["--", "though", " a", " good"],
-             [" fellow", " enough", "--", "so"],
-             [" it", " was", " no", " great"],
-             [" surprise", " to", " me", " to"],
-             [" hear", " that", ",", " in"]
+    assert Enum.take(dataloader_drop_last.stream, 3) == [
+             [
+               {Nx.tensor([40, 367, 2885, 1464]), Nx.tensor([367, 2885, 1464, 1807])},
+               {Nx.tensor([1807, 3619, 402, 271]), Nx.tensor([3619, 402, 271, 10899])},
+               {Nx.tensor([10899, 2138, 257, 7026]), Nx.tensor([2138, 257, 7026, 15632])}
+             ],
+             [
+               {Nx.tensor([15632, 438, 2016, 257]), Nx.tensor([438, 2016, 257, 922])},
+               {Nx.tensor([922, 5891, 1576, 438]), Nx.tensor([5891, 1576, 438, 568])},
+               {Nx.tensor([568, 340, 373, 645]), Nx.tensor([340, 373, 645, 1049])}
+             ],
+             [
+               {Nx.tensor([40, 367, 2885, 1464]), Nx.tensor([367, 2885, 1464, 1807])},
+               {Nx.tensor([1807, 3619, 402, 271]), Nx.tensor([3619, 402, 271, 10899])},
+               {Nx.tensor([10899, 2138, 257, 7026]), Nx.tensor([2138, 257, 7026, 15632])}
+             ]
            ]
   end
 
