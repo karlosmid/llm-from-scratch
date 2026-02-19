@@ -639,6 +639,60 @@ defmodule LlmFromScratch2Test do
            "Embeddings from forward pass should match expected values exactly"
   end
 
+  test "Elixir-style EmbeddingNative with manual_seed (torch.nn.Embedding equivalent)" do
+    vocab_size = 6
+    embedding_dim = 3
+
+    embedding = LlmScratch.EmbeddingNative.new(vocab_size, embedding_dim, seed: 123)
+
+    assert embedding.vocab_size == vocab_size
+    assert embedding.embedding_dim == embedding_dim
+
+    weight = LlmScratch.EmbeddingNative.weight(embedding)
+
+    expected_weight =
+      Nx.tensor(
+        [
+          [0.3373701572418213, -0.1777772158384323, -0.16895616054534912],
+          [0.9177640080451965, 1.5809690952301025, 1.3010399341583252],
+          [1.275301218032837, -0.20095309615135193, -0.16056379675865173],
+          [-0.40148791670799255, 0.966571569442749, -1.1481444835662842],
+          [-1.158868670463562, 0.32547101378440857, -0.6315054297447205],
+          [-2.839993953704834, -0.7848533391952515, -1.4095723628997803]
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(weight, expected_weight, atol: 1.0e-6),
+           "Embedding weights should match PyTorch's weights exactly with seed=123"
+
+    row_3 = Nx.slice(weight, [3, 0], [1, embedding_dim]) |> Nx.squeeze(axes: [0])
+
+    expected_row_3 =
+      Nx.tensor([-0.40148791670799255, 0.966571569442749, -1.1481444835662842], type: {:f, 32})
+
+    assert Nx.all_close(row_3, expected_row_3, atol: 1.0e-6)
+
+    input_ids = Nx.tensor([[2, 3, 5, 1]], type: {:s, 64})
+    embeddings = LlmScratch.EmbeddingNative.forward(embedding, input_ids)
+
+    expected_forward =
+      Nx.tensor(
+        [
+          [
+            [1.275301218032837, -0.20095309615135193, -0.16056379675865173],
+            [-0.40148791670799255, 0.966571569442749, -1.1481444835662842],
+            [-2.839993953704834, -0.7848533391952515, -1.4095723628997803],
+            [0.9177640080451965, 1.5809690952301025, 1.3010399341583252]
+          ]
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(embeddings, expected_forward, atol: 1.0e-6),
+           "Embeddings from forward pass should match expected values exactly"
+  end
+
   test "positional embedding" do
     vocab_size = 50257
     embedding_dim = 256
