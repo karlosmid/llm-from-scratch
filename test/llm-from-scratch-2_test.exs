@@ -694,10 +694,14 @@ defmodule LlmFromScratch2Test do
   end
 
   test "positional embedding" do
+    previous_backend = Nx.default_backend()
+    Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
     vocab_size = 50257
     embedding_dim = 256
 
-    token_embeding_layer = LlmScratch.Embedding.new(vocab_size, embedding_dim, seed: 123)
+    token_embeding_layer = LlmScratch.EmbeddingNative.new(vocab_size, embedding_dim, seed: 123)
 
     {:ok, file_content} = File.read("the-verdict.txt")
 
@@ -712,8 +716,8 @@ defmodule LlmFromScratch2Test do
         num_workers: 0
       )
 
-    batch = dataloader.stream |> Enum.at(0)
-    inputs_list = Enum.map(batch, fn {input, _target} -> input end)
+    batch_0 = dataloader.stream |> Enum.at(0)
+    inputs_list = Enum.map(batch_0, fn {input, _target} -> input end)
 
     # Stack list of tensors into a single tensor: [tensor1, tensor2, ...] -> tensor with shape [batch_size, seq_len]
     inputs = Nx.stack(inputs_list)
@@ -739,12 +743,12 @@ defmodule LlmFromScratch2Test do
     assert Nx.shape(inputs) == {8, 4}
 
     # Get token embeddings: shape [8, 4, 256]
-    token_embeddings = LlmScratch.Embedding.forward(token_embeding_layer, inputs)
+    token_embeddings = LlmScratch.EmbeddingNative.forward(token_embeding_layer, inputs)
     assert Nx.shape(token_embeddings) == {8, 4, 256}
 
     # Create positional embedding layer: vocab_size=4 (positions 0,1,2,3), embedding_dim=256
-    positional_embedding_layer = LlmScratch.Embedding.new(4, 256, seed: 123)
-    positional_embedding_weights = LlmScratch.Embedding.weight(positional_embedding_layer)
+    positional_embedding_layer = LlmScratch.EmbeddingNative.new(4, 256, seed: 123)
+    positional_embedding_weights = LlmScratch.EmbeddingNative.weight(positional_embedding_layer)
     assert Nx.shape(positional_embedding_weights) == {4, 256}
 
     # Create positional indices: [0, 1, 2, 3] for each position in the sequence
@@ -754,7 +758,7 @@ defmodule LlmFromScratch2Test do
 
     # Get positional embeddings: shape [8, 4, 256]
     positional_embeddings =
-      LlmScratch.Embedding.forward(positional_embedding_layer, positional_indices_batch)
+      LlmScratch.EmbeddingNative.forward(positional_embedding_layer, positional_indices_batch)
 
     assert Nx.shape(positional_embeddings) == {8, 4, 256}
 
