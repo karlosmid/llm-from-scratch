@@ -666,7 +666,7 @@ defmodule LlmFromScratch2Test do
     assert Nx.all_close(weight, expected_weight, atol: 1.0e-6),
            "Embedding weights should match PyTorch's weights exactly with seed=123"
 
-    row_3 = Nx.slice(weight, [3, 0], [1, embedding_dim]) |> Nx.squeeze(axes: [0])
+    row_3 = Nx.slice(weight, [3, 0], [1, embedding_dim])
 
     expected_row_3 =
       Nx.tensor([-0.40148791670799255, 0.966571569442749, -1.1481444835662842], type: {:f, 32})
