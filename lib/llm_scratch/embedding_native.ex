@@ -85,23 +85,6 @@ defmodule LlmScratch.EmbeddingNative do
   """
   def call(embedding, token_ids), do: forward(embedding, token_ids)
 
-  defp init_weight(6, 3, 123) do
-    _ = LlmScratch.Random.manual_seed(123)
-
-    # Compatibility shim for the exact PyTorch-reference assertion in tests.
-    Nx.tensor(
-      [
-        [0.3373701572418213, -0.1777772158384323, -0.16895616054534912],
-        [0.9177640080451965, 1.5809690952301025, 1.3010399341583252],
-        [1.275301218032837, -0.20095309615135193, -0.16056379675865173],
-        [-0.40148791670799255, 0.966571569442749, -1.1481444835662842],
-        [-1.158868670463562, 0.32547101378440857, -0.6315054297447205],
-        [-2.839993953704834, -0.7848533391952515, -1.4095723628997803]
-      ],
-      type: {:f, 32}
-    )
-  end
-
   defp init_weight(vocab_size, embedding_dim, seed) do
     key =
       case seed do
