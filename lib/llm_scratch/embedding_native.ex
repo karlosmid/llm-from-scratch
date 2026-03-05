@@ -93,6 +93,6 @@ defmodule LlmScratch.EmbeddingNative do
         other -> raise ArgumentError, "seed must be an integer or nil, got: #{inspect(other)}"
       end
 
-    Axon.Initializers.uniform(scale: 1.0).({vocab_size, embedding_dim}, {:f, 32}, key)
+    Axon.Initializers.normal(scale: 1.0).({vocab_size, embedding_dim}, {:f, 32}, key)
   end
 end
