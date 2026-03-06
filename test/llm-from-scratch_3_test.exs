@@ -21,13 +21,18 @@ defmodule LlmFromScratch3Test do
         type: {:f, 32}
       )
 
+    assert Nx.shape(inputs) == {6, 3}
+
     query =
       inputs
       |> Nx.slice_along_axis(1, 1, axis: 0)
       |> Nx.squeeze(axes: [0])
 
-    # Dot each row with query -> shape {6}
+    assert Nx.shape(query) == {3}
+
     attn_scores_2 = Nx.dot(inputs, [1], query, [0])
+
+    assert Nx.shape(attn_scores_2) == {6}
 
     expected_attn_scores_2 =
       Nx.tensor(
@@ -42,7 +47,9 @@ defmodule LlmFromScratch3Test do
         type: :f32
       )
 
-    assert Nx.all_close(attn_scores_2, expected_attn_scores_2, atol: 1.0e-6)
+    assert Nx.all_close(attn_scores_2, expected_attn_scores_2, atol: 1.0e-6) |> Nx.to_number() ==
+             1,
+           "Attention scores should match expected values exactly"
 
     attn_scores_2_normalized =
       Nx.divide(attn_scores_2, Nx.sum(attn_scores_2, axes: [0]))
@@ -72,7 +79,7 @@ defmodule LlmFromScratch3Test do
            |> Nx.to_number() == 1,
            "Sum of normalized attention scores should be 1.0"
 
-    attn_scores_2_softmax = softmax(attn_scores_2)
+    attn_scores_2_softmax_naive = softmax_naive(attn_scores_2)
 
     expected_attn_scores_2_softmax =
       Nx.tensor(
@@ -88,13 +95,34 @@ defmodule LlmFromScratch3Test do
       )
 
     assert Nx.all_close(
-             attn_scores_2_softmax,
-             expected_attn_scores_2_softmax, atol: 1.0e-6)
+             attn_scores_2_softmax_naive,
+             expected_attn_scores_2_softmax,
+             atol: 1.0e-6
+           )
            |> Nx.to_number() == 1,
            "Softmax of attention scores should match expected values exactly"
+
+    attn_scores_2_softmax_axon = Axon.Activations.softmax(attn_scores_2)
+
+    expected_attn_scores_2_softmax_axon =
+      Nx.tensor(
+        [
+          0.13854756951332092,
+          0.237891286611557,
+          0.23327402770519257,
+          0.12399158626794815,
+          0.10818187147378922,
+          0.15811361372470856
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(attn_scores_2_softmax_axon, expected_attn_scores_2_softmax_axon, atol: 1.0e-6)
+           |> Nx.to_number() == 1,
+           "Axon Softmax of attention scores should match expected values exactly"
   end
 
-  defp softmax(%Nx.Tensor{} = x) do
+  defp softmax_naive(%Nx.Tensor{} = x) do
     exp_x = Nx.exp(x)
     Nx.divide(exp_x, Nx.sum(exp_x, axes: [0]))
   end
