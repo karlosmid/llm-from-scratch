@@ -117,9 +117,27 @@ defmodule LlmFromScratch3Test do
         type: {:f, 32}
       )
 
-    assert Nx.all_close(attn_scores_2_softmax_axon, expected_attn_scores_2_softmax_axon, atol: 1.0e-6)
+    assert Nx.all_close(attn_scores_2_softmax_axon, expected_attn_scores_2_softmax_axon,
+             atol: 1.0e-6
+           )
            |> Nx.to_number() == 1,
            "Axon Softmax of attention scores should match expected values exactly"
+
+    context_vec_2 =
+      attn_scores_2_softmax_axon
+      |> Nx.new_axis(-1)
+      |> Nx.multiply(inputs)
+      |> Nx.sum(axes: [0])
+
+    expected_context_vec_2 =
+      Nx.tensor(
+        [0.4418657422065735, 0.6514819860458374, 0.5683088898658752],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(context_vec_2, expected_context_vec_2, atol: 1.0e-6) |> Nx.to_number() ==
+             1,
+           "Context vector should match expected values exactly"
   end
 
   defp softmax_naive(%Nx.Tensor{} = x) do
