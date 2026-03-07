@@ -297,6 +297,7 @@ defmodule LlmFromScratch3Test do
     assert Nx.all_close(row_sums, ones, atol: 1.0e-6) |> Nx.to_number() == 1
 
     context_vecs = Nx.dot(attn_weights_softmax, [1], inputs, [0])
+
     expected_context_vecs =
       Nx.tensor(
         [
@@ -315,5 +316,134 @@ defmodule LlmFromScratch3Test do
            "Context vectors should match expected values exactly"
 
     assert Nx.shape(context_vecs) == {6, 3}
+  end
+
+  test "self-attention mechanism with trainable weights" do
+    inputs =
+      Nx.tensor(
+        [
+          # Your (x^1)
+          [0.43, 0.15, 0.89],
+          # journey (x^2)
+          [0.55, 0.87, 0.66],
+          # starts (x^3)
+          [0.57, 0.85, 0.64],
+          # with (x^4)
+          [0.22, 0.58, 0.33],
+          # one (x^5)
+          [0.77, 0.25, 0.10],
+          # step (x^6)
+          [0.05, 0.80, 0.55]
+        ],
+        type: {:f, 32}
+      )
+
+    x_2 = Nx.slice_along_axis(inputs, 1, 1, axis: 0) |> Nx.squeeze(axes: [0])
+    d_in = Nx.shape(x_2) |> elem(0)
+    d_out = 2
+    key = LlmScratch.Random.manual_seed(123)
+
+    query_weights = Axon.Initializers.uniform(scale: 1.0).({d_in, d_out}, {:f, 32}, key)
+    key_weights = Axon.Initializers.uniform(scale: 1.0).({d_in, d_out}, {:f, 32}, key)
+    value_weights = Axon.Initializers.uniform(scale: 1.0).({d_in, d_out}, {:f, 32}, key)
+
+    # 1x3 dot 3x2 = 1x2
+    query_2 = Nx.dot(x_2, query_weights)
+    assert Nx.shape(query_2) == {d_out}
+    expected_query_2 = Nx.tensor([-0.20726783573627472, -0.3094936013221741], type: {:f, 32})
+    expected_query_2_book = Nx.tensor([0.4306, 1.4551], type: {:f, 32})
+
+    assert Nx.all_close(query_2, expected_query_2, atol: 1.0e-6) |> Nx.to_number() == 1,
+           "query_2 should match expected values exactly"
+
+    refute Nx.all_close(query_2, expected_query_2_book, atol: 1.0e-6) |> Nx.to_number() == 1,
+           "query_2 should not match expected values exactly due to different random number generators in PyTorch and Nx"
+
+    key_2 = Nx.dot(x_2, key_weights)
+    assert Nx.shape(key_2) == {d_out}
+
+    value_2 = Nx.dot(x_2, value_weights)
+    assert Nx.shape(value_2) == {d_out}
+
+    # 6x3 dot 3x2 = 6x2
+    keys = Nx.dot(inputs, key_weights)
+    assert Nx.shape(keys) == {6, d_out}
+
+    # 6x3 dot 3x2 = 6x2
+    values = Nx.dot(inputs, value_weights)
+    assert Nx.shape(values) == {6, d_out}
+
+    keys_2 = Nx.slice_along_axis(keys, 1, 1, axis: 0) |> Nx.squeeze(axes: [0])
+    # 1x2 dot 2x1 = 1x1
+    attn_scores_22 = Nx.dot(query_2, keys_2)
+    assert Nx.shape(attn_scores_22) == {}
+    expected_attn_scores_22 = Nx.tensor([0.1387462466955185], type: {:f, 32})
+
+    assert Nx.all_close(attn_scores_22, expected_attn_scores_22, atol: 1.0e-6) |> Nx.to_number() ==
+             1,
+           "attn_scores_22 should match expected values exactly"
+
+    expected_attn_scores_22_book = Nx.tensor([1.8524], type: {:f, 32})
+
+    refute Nx.all_close(attn_scores_22, expected_attn_scores_22_book, atol: 1.0e-6)
+           |> Nx.to_number() == 1,
+           "attn_scores_22 should not match expected values exactly due to different random number generators in PyTorch and Nx"
+
+    # {2} dot {6,2} over feature dim -> {6}
+    attn_scores_2 = Nx.dot(query_2, [0], keys, [1])
+    assert Nx.shape(attn_scores_2) == {6}
+
+    expected_attn_scores_2 =
+      Nx.tensor(
+        [
+          -0.17058327794075012,
+          0.1387462466955185,
+          0.14079777896404266,
+          0.10855000466108322,
+          0.13786746561527252,
+          0.09178745746612549
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(attn_scores_2, expected_attn_scores_2, atol: 1.0e-6) |> Nx.to_number() == 1,
+           "attn_scores_2 should match expected values"
+
+    d_k = Nx.axis_size(keys, -1) |> Nx.tensor(type: {:f, 32})
+
+    attn_weights_2 =
+      attn_scores_2
+      |> Nx.divide(Nx.sqrt(d_k))
+      |> Axon.Activations.softmax(axis: -1)
+
+    assert Nx.shape(attn_weights_2) == {6}
+
+    expected_attn_weights_2 =
+      Nx.tensor(
+        [
+          0.1397317796945572,
+          0.17389537394046783,
+          0.1741478145122528,
+          0.1702217161655426,
+          0.17378734052181244,
+          0.16821600496768951
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(attn_weights_2, expected_attn_weights_2, atol: 1.0e-6) |> Nx.to_number() == 1,
+           "attn_weights_2 should match expected values"
+
+    context_vec_2 = Nx.dot(attn_weights_2, [0], values, [0])
+    assert Nx.shape(context_vec_2) == {d_out}
+
+    expected_context_vec_2 =
+      Nx.tensor(
+        [-0.11537063866853714, -0.18990936875343323],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(context_vec_2, expected_context_vec_2, atol: 1.0e-6) |> Nx.to_number() == 1,
+           "context_vec_2 should match expected values"
   end
 end
