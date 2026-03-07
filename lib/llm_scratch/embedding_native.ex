@@ -85,6 +85,9 @@ defmodule LlmScratch.EmbeddingNative do
   """
   def call(embedding, token_ids), do: forward(embedding, token_ids)
 
+  # Initializes weights with N(0, 1), matching PyTorch's nn.Embedding default distribution.
+  # Same seed gives reproducible values in Elixir, but will NOT match PyTorch's values:
+  # PyTorch and Nx use different RNGs (e.g. MT19937 vs Threefry), so the sequences differ.
   defp init_weight(vocab_size, embedding_dim, seed) do
     key =
       case seed do
