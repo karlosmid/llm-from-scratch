@@ -20,9 +20,36 @@ defmodule LlmScratch.SelfAttentionV1 do
         }
 
   @spec new(pos_integer(), pos_integer()) :: t()
+  @doc """
+  Creates a self-attention module with randomly initialized projection weights.
+
+  ## Arguments
+
+    * `d_in` - input feature size.
+    * `d_out` - projection/output feature size.
+
+  ## Returns
+
+    * `%LlmScratch.SelfAttentionV1{}` with initialized `w_q`, `w_k`, and `w_v`.
+  """
   def new(d_in, d_out), do: new(d_in, d_out, [])
 
   @spec new(pos_integer(), pos_integer(), keyword()) :: t()
+  @doc """
+  Creates a self-attention module with optional `:seed` and optional manual
+  projection weights (`:w_q`, `:w_k`, `:w_v`).
+
+  ## Arguments
+
+    * `d_in` - input feature size.
+    * `d_out` - projection/output feature size.
+    * `opts` - keyword options:
+      `:seed`, `:w_q`, `:w_k`, `:w_v`.
+
+  ## Returns
+
+    * `%LlmScratch.SelfAttentionV1{}` with initialized or provided projections.
+  """
   def new(d_in, d_out, opts)
       when is_integer(d_in) and d_in > 0 and is_integer(d_out) and d_out > 0 do
     seed = Keyword.get(opts, :seed)
@@ -42,6 +69,18 @@ defmodule LlmScratch.SelfAttentionV1 do
   end
 
   @spec forward(t(), Nx.Tensor.t()) :: Nx.Tensor.t()
+  @doc """
+  Computes context vectors for all tokens in `inputs`.
+
+  ## Arguments
+
+    * `sa` - `%LlmScratch.SelfAttentionV1{}` module state.
+    * `inputs` - tensor of shape `{num_tokens, d_in}`.
+
+  ## Returns
+
+    * context tensor of shape `{num_tokens, d_out}`.
+  """
   def forward(%__MODULE__{} = sa, %Nx.Tensor{} = inputs) do
     validate_input_shape!(inputs, sa.d_in)
 

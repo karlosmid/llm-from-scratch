@@ -23,9 +23,36 @@ defmodule LlmScratch.SelfAttentionV2 do
         }
 
   @spec new(pos_integer(), pos_integer()) :: t()
+  @doc """
+  Creates a self-attention module whose projection weights are initialized via
+  Axon dense layers.
+
+  ## Arguments
+
+    * `d_in` - input feature size.
+    * `d_out` - projection/output feature size.
+
+  ## Returns
+
+    * `%LlmScratch.SelfAttentionV2{}` with dense-initialized `w_q`, `w_k`, and `w_v`.
+  """
   def new(d_in, d_out), do: new(d_in, d_out, [])
 
   @spec new(pos_integer(), pos_integer(), keyword()) :: t()
+  @doc """
+  Creates a self-attention module with Axon dense-initialized projections.
+
+  ## Arguments
+
+    * `d_in` - input feature size.
+    * `d_out` - projection/output feature size.
+    * `opts` - keyword options:
+      `:seed` (optional, deterministic initialization).
+
+  ## Returns
+
+    * `%LlmScratch.SelfAttentionV2{}` with dense-initialized projections.
+  """
   def new(d_in, d_out, opts)
       when is_integer(d_in) and d_in > 0 and is_integer(d_out) and d_out > 0 do
     seed = normalize_seed(Keyword.get(opts, :seed))
@@ -38,6 +65,18 @@ defmodule LlmScratch.SelfAttentionV2 do
   end
 
   @spec forward(t(), Nx.Tensor.t()) :: Nx.Tensor.t()
+  @doc """
+  Computes context vectors for all tokens in `inputs`.
+
+  ## Arguments
+
+    * `sa` - `%LlmScratch.SelfAttentionV2{}` module state.
+    * `inputs` - tensor of shape `{num_tokens, d_in}`.
+
+  ## Returns
+
+    * context tensor of shape `{num_tokens, d_out}`.
+  """
   def forward(%__MODULE__{} = sa, %Nx.Tensor{} = inputs) do
     validate_input_shape!(inputs, sa.d_in)
 
