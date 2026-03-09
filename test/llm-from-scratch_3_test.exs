@@ -406,7 +406,8 @@ defmodule LlmFromScratch3Test do
         type: {:f, 32}
       )
 
-    assert Nx.all_close(attn_scores_2, expected_attn_scores_2, atol: 1.0e-6) |> Nx.to_number() == 1,
+    assert Nx.all_close(attn_scores_2, expected_attn_scores_2, atol: 1.0e-6) |> Nx.to_number() ==
+             1,
            "attn_scores_2 should match expected values"
 
     d_k = Nx.axis_size(keys, -1) |> Nx.tensor(type: {:f, 32})
@@ -431,7 +432,8 @@ defmodule LlmFromScratch3Test do
         type: {:f, 32}
       )
 
-    assert Nx.all_close(attn_weights_2, expected_attn_weights_2, atol: 1.0e-6) |> Nx.to_number() == 1,
+    assert Nx.all_close(attn_weights_2, expected_attn_weights_2, atol: 1.0e-6) |> Nx.to_number() ==
+             1,
            "attn_weights_2 should match expected values"
 
     context_vec_2 = Nx.dot(attn_weights_2, [0], values, [0])
@@ -443,7 +445,123 @@ defmodule LlmFromScratch3Test do
         type: {:f, 32}
       )
 
-    assert Nx.all_close(context_vec_2, expected_context_vec_2, atol: 1.0e-6) |> Nx.to_number() == 1,
+    assert Nx.all_close(context_vec_2, expected_context_vec_2, atol: 1.0e-6) |> Nx.to_number() ==
+             1,
            "context_vec_2 should match expected values"
+  end
+
+  test "Implementing a compact self-attention module" do
+    inputs =
+      Nx.tensor(
+        [
+          # Your (x^1)
+          [0.43, 0.15, 0.89],
+          # journey (x^2)
+          [0.55, 0.87, 0.66],
+          # starts (x^3)
+          [0.57, 0.85, 0.64],
+          # with (x^4)
+          [0.22, 0.58, 0.33],
+          # one (x^5)
+          [0.77, 0.25, 0.10],
+          # step (x^6)
+          [0.05, 0.80, 0.55]
+        ],
+        type: {:f, 32}
+      )
+
+    sa = LlmScratch.SelfAttentionV1.new(3, 2, seed: 123)
+
+    context_vecs = LlmScratch.SelfAttentionV1.forward(sa, inputs)
+
+    assert Nx.shape(context_vecs) == {6, 2}
+
+    expected_context_vecs =
+      Nx.tensor(
+        [
+          [-0.07548463344573975, -0.15017275512218475],
+          [-0.11537063866853714, -0.18990936875343323],
+          [-0.11561498790979385, -0.19015151262283325],
+          [-0.11222726106643677, -0.1867683380842209],
+          [-0.11577533185482025, -0.1902845799922943],
+          [-0.11009891331195831, -0.18466056883335114]
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(context_vecs, expected_context_vecs, atol: 1.0e-6) |> Nx.to_number() == 1,
+           "context_vecs should match expected values exactly"
+  end
+
+  test "compact self-attention module v2 uses Axon dense initialization" do
+    inputs =
+      Nx.tensor(
+        [
+          [0.43, 0.15, 0.89],
+          [0.55, 0.87, 0.66],
+          [0.57, 0.85, 0.64],
+          [0.22, 0.58, 0.33],
+          [0.77, 0.25, 0.10],
+          [0.05, 0.80, 0.55]
+        ],
+        type: {:f, 32}
+      )
+
+    sa = LlmScratch.SelfAttentionV2.new(3, 2, seed: 789)
+
+    context_vecs = LlmScratch.SelfAttentionV2.forward(sa, inputs)
+
+    assert Nx.shape(context_vecs) == {6, 2}
+
+    expected_context_vecs =
+      Nx.tensor(
+        [
+          [0.20869487524032593, -0.11512904614210129],
+          [0.1995905637741089, -0.10041604191064835],
+          [0.197800412774086, -0.09748103469610214],
+          [0.20753224194049835, -0.11311019212007523],
+          [0.16690319776535034, -0.04650232568383217],
+          [0.22278699278831482, -0.1379932463169098]
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(context_vecs, expected_context_vecs, atol: 1.0e-6) |> Nx.to_number() == 1,
+           "context_vecs should match expected values exactly"
+  end
+
+  test "exercise 3.1 - transfer v2 weights into v1 and match outputs" do
+    inputs =
+      Nx.tensor(
+        [
+          [0.43, 0.15, 0.89],
+          [0.55, 0.87, 0.66],
+          [0.57, 0.85, 0.64],
+          [0.22, 0.58, 0.33],
+          [0.77, 0.25, 0.10],
+          [0.05, 0.80, 0.55]
+        ],
+        type: {:f, 32}
+      )
+
+    sa_v2 = LlmScratch.SelfAttentionV2.new(3, 2, seed: 123)
+
+    # Axon dense kernels in this project are already shaped {d_in, d_out},
+    # matching V1's expected projection weight layout.
+    sa_v1 =
+      LlmScratch.SelfAttentionV1.new(3, 2,
+        w_q: sa_v2.w_q.kernel,
+        w_k: sa_v2.w_k.kernel,
+        w_v: sa_v2.w_v.kernel
+      )
+
+    context_v2 = LlmScratch.SelfAttentionV2.forward(sa_v2, inputs)
+    context_v1 = LlmScratch.SelfAttentionV1.forward(sa_v1, inputs)
+
+    assert Nx.shape(context_v1) == {6, 2}
+    assert Nx.shape(context_v2) == {6, 2}
+
+    assert Nx.all_close(context_v1, context_v2, atol: 1.0e-6) |> Nx.to_number() == 1,
+           "after copying weights, v1 and v2 should produce the same outputs"
   end
 end
