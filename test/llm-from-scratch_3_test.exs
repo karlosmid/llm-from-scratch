@@ -564,4 +564,309 @@ defmodule LlmFromScratch3Test do
     assert Nx.all_close(context_v1, context_v2, atol: 1.0e-6) |> Nx.to_number() == 1,
            "after copying weights, v1 and v2 should produce the same outputs"
   end
+
+  test "casual attention mask" do
+    inputs =
+      Nx.tensor(
+        [
+          [0.43, 0.15, 0.89],
+          [0.55, 0.87, 0.66],
+          [0.57, 0.85, 0.64],
+          [0.22, 0.58, 0.33],
+          [0.77, 0.25, 0.10],
+          [0.05, 0.80, 0.55]
+        ],
+        type: {:f, 32}
+      )
+
+    sa_v2 = LlmScratch.SelfAttentionV2.new(3, 2, seed: 123)
+
+    queries = LlmScratch.SelfAttentionV2.dense_project(inputs, sa_v2.w_q)
+    keys = LlmScratch.SelfAttentionV2.dense_project(inputs, sa_v2.w_k)
+    attn_scores = Nx.dot(queries, [1], keys, [1])
+
+    attn_weights =
+      Nx.divide(attn_scores, Nx.sqrt(Nx.axis_size(keys, -1)))
+      |> Axon.Activations.softmax(axis: -1)
+
+    expected_attn_weights =
+      Nx.tensor(
+        [
+          [
+            0.1531660407781601,
+            0.1543799340724945,
+            0.1536969095468521,
+            0.1883421689271927,
+            0.1566835194826126,
+            0.1937314122915268
+          ],
+          [
+            0.14633320271968842,
+            0.14933642745018005,
+            0.14835353195667267,
+            0.19792792201042175,
+            0.1513950079679489,
+            0.2066539078950882
+          ],
+          [
+            0.14623598754405975,
+            0.14969584345817566,
+            0.1487070620059967,
+            0.19760626554489136,
+            0.15132319927215576,
+            0.20643165707588196
+          ],
+          [
+            0.15648190677165985,
+            0.15691247582435608,
+            0.15638375282287598,
+            0.1835598349571228,
+            0.15919820964336395,
+            0.18746380507946014
+          ],
+          [
+            0.15005655586719513,
+            0.1612723171710968,
+            0.1604372262954712,
+            0.18309712409973145,
+            0.15431715548038483,
+            0.1908196359872818
+          ],
+          [
+            0.15678176283836365,
+            0.1527770310640335,
+            0.15225917100906372,
+            0.1877351701259613,
+            0.15941700339317322,
+            0.1910298764705658
+          ]
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(attn_weights, expected_attn_weights, atol: 1.0e-6) |> Nx.to_number() == 1,
+           "attn_weights should match expected values"
+
+    assert Nx.shape(attn_weights) == {6, 6}
+
+    context_length = Nx.axis_size(attn_scores, 0)
+
+    mask_simple =
+      Nx.broadcast(1.0, {context_length, context_length})
+      |> Nx.tril()
+
+    mask_simple_expected =
+      Nx.tensor(
+        [
+          [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+          [1.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+          [1.0, 1.0, 1.0, 0.0, 0.0, 0.0],
+          [1.0, 1.0, 1.0, 1.0, 0.0, 0.0],
+          [1.0, 1.0, 1.0, 1.0, 1.0, 0.0],
+          [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(mask_simple, mask_simple_expected, atol: 1.0e-6) |> Nx.to_number() == 1,
+           "mask_simple should match expected values"
+
+    masked_attn_weights = Nx.multiply(attn_weights, mask_simple)
+
+    assert Nx.shape(masked_attn_weights) == {6, 6}
+
+    masked_attn_weights_expected =
+      Nx.tensor(
+        [
+          [
+            [0.1531660407781601, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.14633320271968842, 0.14933642745018005, 0.0, 0.0, 0.0, 0.0],
+            [0.14623598754405975, 0.14969584345817566, 0.1487070620059967, 0.0, 0.0, 0.0],
+            [
+              0.15648190677165985,
+              0.15691247582435608,
+              0.15638375282287598,
+              0.1835598349571228,
+              0.0,
+              0.0
+            ],
+            [
+              0.15005655586719513,
+              0.1612723171710968,
+              0.1604372262954712,
+              0.18309712409973145,
+              0.15431715548038483,
+              0.0
+            ],
+            [
+              0.15678176283836365,
+              0.1527770310640335,
+              0.15225917100906372,
+              0.1877351701259613,
+              0.15941700339317322,
+              0.1910298764705658
+            ]
+          ]
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(masked_attn_weights, masked_attn_weights_expected, atol: 1.0e-6)
+           |> Nx.to_number() == 1,
+           "masked_attn_weights should match expected values"
+
+    row_sums = Nx.sum(masked_attn_weights, axes: [-1], keep_axes: true)
+
+    masked_attn_weights_norm =
+      Nx.divide(masked_attn_weights, row_sums)
+
+    expected_masked_attn_weights_norm =
+      Nx.tensor(
+        [
+          [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+          [0.49492135643959045, 0.5050787329673767, 0.0, 0.0, 0.0, 0.0],
+          [0.32888707518577576, 0.33666834235191345, 0.3344445526599884, 0.0, 0.0, 0.0],
+          [
+            0.2395114302635193,
+            0.2401704639196396,
+            0.23936119675636292,
+            0.2809569537639618,
+            0.0,
+            0.0
+          ],
+          [
+            0.18544265627861023,
+            0.1993032991886139,
+            0.1982712745666504,
+            0.2262747883796692,
+            0.1907079815864563,
+            0.0
+          ],
+          [
+            0.15678176283836365,
+            0.1527770310640335,
+            0.15225917100906372,
+            0.1877351701259613,
+            0.15941700339317322,
+            0.1910298764705658
+          ]
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(masked_attn_weights_norm, expected_masked_attn_weights_norm, atol: 1.0e-6)
+           |> Nx.to_number() == 1,
+           "masked_attn_weights_norm should match expected values"
+
+    mask =
+      Nx.broadcast(1.0, {context_length, context_length})
+      # upper triangle above diagonal
+      |> Nx.triu(k: 1)
+
+    mask_bool = Nx.greater(mask, 0.0)
+    neg_inf = Nx.broadcast(:neg_infinity, Nx.shape(attn_scores))
+    masked = Nx.select(mask_bool, neg_inf, attn_scores)
+
+    expected_masked =
+      Nx.tensor(
+        [
+          [
+            -0.5037099719047546,
+            :neg_infinity,
+            :neg_infinity,
+            :neg_infinity,
+            :neg_infinity,
+            :neg_infinity
+          ],
+          [
+            -0.7201937437057495,
+            -0.69146329164505,
+            :neg_infinity,
+            :neg_infinity,
+            :neg_infinity,
+            :neg_infinity
+          ],
+          [
+            -0.7123136520385742,
+            -0.6792438626289368,
+            -0.6886162161827087,
+            :neg_infinity,
+            :neg_infinity,
+            :neg_infinity
+          ],
+          [
+            -0.3948274254798889,
+            -0.3909415006637573,
+            -0.39571473002433777,
+            -0.16911853849887848,
+            :neg_infinity,
+            :neg_infinity
+          ],
+          [
+            -0.3698960840702057,
+            -0.2679566442966461,
+            -0.2752986252307892,
+            -0.08846122026443481,
+            -0.3303014636039734,
+            :neg_infinity
+          ],
+          [
+            -0.4973980784416199,
+            -0.533991277217865,
+            -0.53879314661026,
+            -0.24258869886398315,
+            -0.473825067281723,
+            -0.21798484027385712
+          ]
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all(Nx.equal(masked, expected_masked)) |> Nx.to_number() == 1,
+           "masked should match expected values"
+
+    masked_attn_weights_causal =
+      Nx.divide(masked, Nx.sqrt(Nx.axis_size(keys, -1)))
+      |> Axon.Activations.softmax(axis: -1)
+
+    expected_masked_attn_weights_causal =
+      Nx.tensor(
+        [
+          [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+          [0.4949212968349457, 0.5050786733627319, 0.0, 0.0, 0.0, 0.0],
+          [0.32888710498809814, 0.33666837215423584, 0.3344445526599884, 0.0, 0.0, 0.0],
+          [
+            0.23951144516468048,
+            0.2401704639196396,
+            0.2393612116575241,
+            0.2809569537639618,
+            0.0,
+            0.0
+          ],
+          [
+            0.18544265627861023,
+            0.1993032991886139,
+            0.1982712745666504,
+            0.22627480328083038,
+            0.1907079666852951,
+            0.0
+          ],
+          [
+            0.15678176283836365,
+            0.1527770310640335,
+            0.15225917100906372,
+            0.1877351701259613,
+            0.15941700339317322,
+            0.1910298764705658
+          ]
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(masked_attn_weights_causal, expected_masked_attn_weights_causal,
+             atol: 1.0e-6
+           )
+           |> Nx.to_number() == 1,
+           "masked_attn_weights_causal should match expected values"
+  end
 end
