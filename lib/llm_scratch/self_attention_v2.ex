@@ -131,7 +131,25 @@ defmodule LlmScratch.SelfAttentionV2 do
     end
   end
 
-  defp dense_project(inputs, %{kernel: kernel, bias: bias}) do
+  @doc """
+  Projects the input tensor using the provided dense layer weights.
+
+  ## Parameters
+
+    - `inputs`: The input tensor of shape `{num_tokens, d_in}`.
+    - `%{kernel: kernel, bias: bias}`: A map containing:
+        - `kernel`: The projection weights of shape `{d_in, d_out}`.
+        - `bias`: The bias vector of shape `{d_out}`.
+
+  ## Returns
+
+    - The projected tensor of shape `{num_tokens, d_out}`, computed as `Nx.dot(inputs, kernel) + bias`.
+
+  """
+  @spec dense_project(Nx.Tensor.t(), %{kernel: Nx.Tensor.t(), bias: Nx.Tensor.t()}) ::
+          Nx.Tensor.t()
+
+  def dense_project(inputs, %{kernel: kernel, bias: bias}) do
     Nx.add(Nx.dot(inputs, kernel), bias)
   end
 
