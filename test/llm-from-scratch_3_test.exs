@@ -869,4 +869,87 @@ defmodule LlmFromScratch3Test do
            |> Nx.to_number() == 1,
            "masked_attn_weights_causal should match expected values"
   end
+
+  test "dropout" do
+    key = Nx.Random.key(123)
+    example = Nx.broadcast(1.0, {6, 6})
+    %Axon.StatefulOutput{output: dropped, state: %{"key" => _new_key}} =
+      Axon.Layers.dropout(example, key, rate: 0.5, mode: :train)
+
+    expected_dropped =
+      Nx.tensor(
+        [
+          [0.0, 2.0, 0.0, 0.0, 0.0, 0.0],
+          [0.0, 0.0, 0.0, 0.0, 2.0, 2.0],
+          [0.0, 0.0, 0.0, 2.0, 2.0, 0.0],
+          [2.0, 2.0, 0.0, 0.0, 0.0, 2.0],
+          [2.0, 2.0, 0.0, 0.0, 2.0, 2.0],
+          [0.0, 0.0, 2.0, 0.0, 2.0, 2.0]
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(dropped, expected_dropped, atol: 1.0e-6) |> Nx.to_number() == 1,
+           "dropped should match expected values"
+
+
+    masked_attn_weights_causal =
+      Nx.tensor(
+        [
+          [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+          [0.4949212968349457, 0.5050786733627319, 0.0, 0.0, 0.0, 0.0],
+          [0.32888710498809814, 0.33666837215423584, 0.3344445526599884, 0.0, 0.0, 0.0],
+          [
+            0.23951144516468048,
+            0.2401704639196396,
+            0.2393612116575241,
+            0.2809569537639618,
+            0.0,
+            0.0
+          ],
+          [
+            0.18544265627861023,
+            0.1993032991886139,
+            0.1982712745666504,
+            0.22627480328083038,
+            0.1907079666852951,
+            0.0
+          ],
+          [
+            0.15678176283836365,
+            0.1527770310640335,
+            0.15225917100906372,
+            0.1877351701259613,
+            0.15941700339317322,
+            0.1910298764705658
+          ]
+        ],
+        type: {:f, 32}
+      )
+
+    %Axon.StatefulOutput{output: masked_attn_weights_causal_dropped, state: %{"key" => _new_key}} =
+      Axon.Layers.dropout(masked_attn_weights_causal, key, rate: 0.5, mode: :train)
+
+    expected_masked_attn_weights_causal_dropped =
+      Nx.tensor(
+        [
+          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+          [0.47902289032936096, 0.4803409278392792, 0.0, 0.0, 0.0, 0.0],
+          [0.37088531255722046, 0.3986065983772278, 0.0, 0.0, 0.3814159333705902, 0.0],
+          [0.0, 0.0, 0.30451834201812744, 0.0, 0.31883400678634644, 0.3820597529411316]
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(
+             masked_attn_weights_causal_dropped,
+             expected_masked_attn_weights_causal_dropped,
+             atol: 1.0e-6
+           )
+           |> Nx.to_number() == 1,
+           "masked_attn_weights_causal_dropped should match expected values"
+
+  end
 end
