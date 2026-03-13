@@ -952,4 +952,54 @@ defmodule LlmFromScratch3Test do
            "masked_attn_weights_causal_dropped should match expected values"
 
   end
+
+  test "causal attention matches stacked batch example" do
+    inputs =
+      Nx.tensor(
+        [
+          [0.43, 0.15, 0.89],
+          [0.55, 0.87, 0.66],
+          [0.57, 0.85, 0.64],
+          [0.22, 0.58, 0.33],
+          [0.77, 0.25, 0.10],
+          [0.05, 0.80, 0.55]
+        ],
+        type: {:f, 32}
+      )
+
+    d_in = 3
+    d_out = 2
+    batch = Nx.stack([inputs, inputs], axis: 0)
+    context_length = elem(Nx.shape(batch), 1)
+    ca = LlmScratch.CausalAttention.new(d_in, d_out, context_length, 0.0, false, seed: 123)
+
+    context_vecs = LlmScratch.CausalAttention.forward(ca, batch, mode: :inference)
+
+    assert Nx.shape(context_vecs) == {2, 6, 2}
+
+    expected_context_vecs =
+      Nx.tensor(
+        [
+          [
+            [-0.49523380398750305, -0.17632800340652466],
+            [-0.07537277787923813, -0.13790269196033478],
+            [0.06633053719997406, -0.12039512395858765],
+            [0.11786159127950668, -0.10831516981124878],
+            [0.1877504140138626, -0.04864511638879776],
+            [0.1768769919872284, -0.08047633618116379]
+          ],
+          [
+            [-0.49523380398750305, -0.17632800340652466],
+            [-0.07537277787923813, -0.13790269196033478],
+            [0.06633053719997406, -0.12039512395858765],
+            [0.11786159127950668, -0.10831516981124878],
+            [0.1877504140138626, -0.04864511638879776],
+            [0.1768769919872284, -0.08047633618116379]
+          ]
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.all_close(context_vecs, expected_context_vecs, atol: 1.0e-6) |> Nx.to_number() == 1
+  end
 end
