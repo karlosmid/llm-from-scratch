@@ -873,6 +873,7 @@ defmodule LlmFromScratch3Test do
   test "dropout" do
     key = Nx.Random.key(123)
     example = Nx.broadcast(1.0, {6, 6})
+
     %Axon.StatefulOutput{output: dropped, state: %{"key" => _new_key}} =
       Axon.Layers.dropout(example, key, rate: 0.5, mode: :train)
 
@@ -891,7 +892,6 @@ defmodule LlmFromScratch3Test do
 
     assert Nx.all_close(dropped, expected_dropped, atol: 1.0e-6) |> Nx.to_number() == 1,
            "dropped should match expected values"
-
 
     masked_attn_weights_causal =
       Nx.tensor(
@@ -950,7 +950,6 @@ defmodule LlmFromScratch3Test do
            )
            |> Nx.to_number() == 1,
            "masked_attn_weights_causal_dropped should match expected values"
-
   end
 
   test "causal attention matches stacked batch example" do
@@ -1030,6 +1029,36 @@ defmodule LlmFromScratch3Test do
     assert Nx.all_close(result, expected, atol: 1.0e-6) |> Nx.to_number() == 1
   end
 
+  test "multihead attention matches the stacked batch example" do
+    inputs =
+      Nx.tensor(
+        [
+          [0.43, 0.15, 0.89],
+          [0.55, 0.87, 0.66],
+          [0.57, 0.85, 0.64],
+          [0.22, 0.58, 0.33],
+          [0.77, 0.25, 0.10],
+          [0.05, 0.80, 0.55]
+        ],
+        type: {:f, 32}
+      )
+
+    batch = Nx.stack([inputs, inputs], axis: 0)
+    {batch_size, context_length, d_in} = Nx.shape(batch)
+    d_out = 2
+
+    mha = LlmScratch.MultiheadAttention.new(d_in, d_out, context_length, 0.0, 2, false, seed: 123)
+
+    context_vecs = LlmScratch.MultiheadAttention.forward(mha, batch, mode: :inference)
+
+    first_batch = Nx.slice_along_axis(context_vecs, 0, 1, axis: 0) |> Nx.squeeze(axes: [0])
+    second_batch = Nx.slice_along_axis(context_vecs, 1, 1, axis: 0) |> Nx.squeeze(axes: [0])
+
+    assert batch_size == 2
+    assert Nx.shape(context_vecs) == {2, 6, 2}
+    assert Nx.all_close(first_batch, second_batch, atol: 1.0e-6) |> Nx.to_number() == 1
+  end
+
   test "exercise 3.2 returns two-dimensional embedding vectors with two heads" do
     input =
       Nx.tensor(
@@ -1049,5 +1078,78 @@ defmodule LlmFromScratch3Test do
     result = LlmScratch.MultiheadAttentionWrapper.forward(mha, inputs, mode: :inference)
 
     assert Nx.shape(result) == {2, 4, 2}
+  end
+
+  test "multihead attention combines split heads and output projection in one module" do
+    inputs =
+      Nx.tensor(
+        [
+          [0.43, 0.15, 0.89],
+          [0.55, 0.87, 0.66],
+          [0.57, 0.85, 0.64],
+          [0.22, 0.58, 0.33],
+          [0.77, 0.25, 0.10],
+          [0.05, 0.80, 0.55]
+        ],
+        type: {:f, 32}
+      )
+
+    inputs = Nx.stack([inputs, inputs], axis: 0)
+
+    mha = LlmScratch.MultiheadAttention.new(3, 2, 6, 0.0, 2, false, seed: 123)
+
+    result = LlmScratch.MultiheadAttention.forward(mha, inputs, mode: :inference)
+
+    expected =
+      Nx.tensor(
+        [
+          [
+            [-0.47695064544677734, -0.23235172033309937],
+            [-0.10124677419662476, -0.023370809853076935],
+            [0.031040165573358536, 0.04926960915327072],
+            [0.07956627011299133, 0.07443806529045105],
+            [0.15488147735595703, 0.10296830534934998],
+            [0.14108411967754364, 0.10342075675725937]
+          ],
+          [
+            [-0.47695064544677734, -0.23235172033309937],
+            [-0.10124677419662476, -0.023370809853076935],
+            [0.031040165573358536, 0.04926960915327072],
+            [0.07956627011299133, 0.07443806529045105],
+            [0.15488147735595703, 0.10296830534934998],
+            [0.14108411967754364, 0.10342075675725937]
+          ]
+        ],
+        type: {:f, 32}
+      )
+
+    assert Nx.shape(result) == {2, 6, 2}
+    assert Nx.all_close(result, expected, atol: 1.0e-6) |> Nx.to_number() == 1
+  end
+
+  test "multihead attention requires d_out to be divisible by num_heads" do
+    assert_raise ArgumentError, "d_out must be divisible by num_heads", fn ->
+      LlmScratch.MultiheadAttention.new(3, 3, 4, 0.0, 2, false, seed: 123)
+    end
+  end
+
+  test "exercise 3.3 initializes a GPT-2 small attention module" do
+    previous_backend = Nx.default_backend()
+    Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    mha = LlmScratch.MultiheadAttention.new(768, 768, 1024, 0.0, 12, false, seed: 123)
+
+    assert mha.d_in == 768
+    assert mha.d_out == 768
+    assert mha.context_length == 1024
+    assert mha.num_heads == 12
+    assert mha.head_dim == 64
+    assert mha.qkv_bias == false
+    assert Nx.shape(mha.mask) == {1024, 1024}
+    assert Nx.shape(mha.w_q.kernel) == {768, 768}
+    assert Nx.shape(mha.w_k.kernel) == {768, 768}
+    assert Nx.shape(mha.w_v.kernel) == {768, 768}
+    assert Nx.shape(mha.out_proj.kernel) == {768, 768}
   end
 end

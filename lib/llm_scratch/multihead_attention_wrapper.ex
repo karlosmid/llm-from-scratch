@@ -44,11 +44,20 @@ defmodule LlmScratch.MultiheadAttentionWrapper do
   def new(d_in, d_out, context_length, dropout, num_heads),
     do: new(d_in, d_out, context_length, dropout, num_heads, false, [])
 
-  @spec new(pos_integer(), pos_integer(), pos_integer(), number(), pos_integer(), boolean()) :: t()
+  @spec new(pos_integer(), pos_integer(), pos_integer(), number(), pos_integer(), boolean()) ::
+          t()
   def new(d_in, d_out, context_length, dropout, num_heads, qkv_bias),
     do: new(d_in, d_out, context_length, dropout, num_heads, qkv_bias, [])
 
-  @spec new(pos_integer(), pos_integer(), pos_integer(), number(), pos_integer(), boolean(), keyword()) ::
+  @spec new(
+          pos_integer(),
+          pos_integer(),
+          pos_integer(),
+          number(),
+          pos_integer(),
+          boolean(),
+          keyword()
+        ) ::
           t()
   @doc """
   Creates a wrapper containing `num_heads` independent causal-attention heads.
