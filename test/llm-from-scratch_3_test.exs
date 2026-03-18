@@ -1002,4 +1002,52 @@ defmodule LlmFromScratch3Test do
 
     assert Nx.all_close(context_vecs, expected_context_vecs, atol: 1.0e-6) |> Nx.to_number() == 1
   end
+
+  test "multihead attention wrapper concatenates head outputs on the last axis" do
+    input =
+      Nx.tensor(
+        [
+          [0.43, 0.15, 0.89],
+          [0.55, 0.87, 0.66],
+          [0.57, 0.85, 0.64],
+          [0.22, 0.58, 0.33]
+        ],
+        type: {:f, 32}
+      )
+
+    inputs = Nx.stack([input, input], axis: 0)
+
+    mha = LlmScratch.MultiheadAttentionWrapper.new(3, 2, 4, 0.0, 3, false, seed: 123)
+
+    result = LlmScratch.MultiheadAttentionWrapper.forward(mha, inputs, mode: :inference)
+
+    expected =
+      mha.heads
+      |> Enum.map(&LlmScratch.CausalAttention.forward(&1, inputs, mode: :inference))
+      |> Nx.concatenate(axis: -1)
+
+    assert Nx.shape(result) == {2, 4, 6}
+    assert Nx.all_close(result, expected, atol: 1.0e-6) |> Nx.to_number() == 1
+  end
+
+  test "exercise 3.2 returns two-dimensional embedding vectors with two heads" do
+    input =
+      Nx.tensor(
+        [
+          [0.43, 0.15, 0.89],
+          [0.55, 0.87, 0.66],
+          [0.57, 0.85, 0.64],
+          [0.22, 0.58, 0.33]
+        ],
+        type: {:f, 32}
+      )
+
+    inputs = Nx.stack([input, input], axis: 0)
+
+    mha = LlmScratch.MultiheadAttentionWrapper.new(3, 1, 4, 0.0, 2, false, seed: 123)
+
+    result = LlmScratch.MultiheadAttentionWrapper.forward(mha, inputs, mode: :inference)
+
+    assert Nx.shape(result) == {2, 4, 2}
+  end
 end
