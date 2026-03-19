@@ -123,11 +123,7 @@ defmodule LlmFromScratch3Test do
            |> Nx.to_number() == 1,
            "Axon Softmax of attention scores should match expected values exactly"
 
-    context_vec_2 =
-      attn_scores_2_softmax_axon
-      |> Nx.new_axis(-1)
-      |> Nx.multiply(inputs)
-      |> Nx.sum(axes: [0])
+    context_vec_2 = Nx.dot(attn_scores_2_softmax_axon, [0], inputs, [0])
 
     expected_context_vec_2 =
       Nx.tensor(
