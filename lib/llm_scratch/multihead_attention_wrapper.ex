@@ -41,11 +41,21 @@ defmodule LlmScratch.MultiheadAttentionWrapper do
         }
 
   @spec new(pos_integer(), pos_integer(), pos_integer(), number(), pos_integer()) :: t()
+  @doc """
+  Creates a wrapper with default `qkv_bias: false`.
+
+  Equivalent to `new(d_in, d_out, context_length, dropout, num_heads, false, [])`.
+  """
   def new(d_in, d_out, context_length, dropout, num_heads),
     do: new(d_in, d_out, context_length, dropout, num_heads, false, [])
 
   @spec new(pos_integer(), pos_integer(), pos_integer(), number(), pos_integer(), boolean()) ::
           t()
+  @doc """
+  Creates a wrapper with explicit `qkv_bias`.
+
+  Equivalent to `new(d_in, d_out, context_length, dropout, num_heads, qkv_bias, [])`.
+  """
   def new(d_in, d_out, context_length, dropout, num_heads, qkv_bias),
     do: new(d_in, d_out, context_length, dropout, num_heads, qkv_bias, [])
 
@@ -61,6 +71,21 @@ defmodule LlmScratch.MultiheadAttentionWrapper do
           t()
   @doc """
   Creates a wrapper containing `num_heads` independent causal-attention heads.
+
+  Unlike `LlmScratch.MultiheadAttention`, this module does not share Q/K/V
+  projections across heads. Each head is a full `LlmScratch.CausalAttention`
+  instance with output size `d_out`, so the concatenated output width is
+  `num_heads * d_out`.
+
+  ## Arguments
+
+    * `d_in` - input feature size for each token
+    * `d_out` - output feature size produced by each head
+    * `context_length` - maximum sequence length supported by each head
+    * `dropout` - dropout rate in `[0, 1)`, applied inside each head
+    * `num_heads` - number of independent causal-attention heads
+    * `qkv_bias` - whether each head's query/key/value projections use bias
+    * `opts` - keyword options for initialization
 
   ## Options
 
@@ -103,7 +128,16 @@ defmodule LlmScratch.MultiheadAttentionWrapper do
   Runs all heads on the same input and concatenates their context vectors on the
   last axis.
 
-  Accepts the same forward options as `LlmScratch.CausalAttention.forward/3`.
+  ## Arguments
+
+    * `wrapper` - `%LlmScratch.MultiheadAttentionWrapper{}`
+    * `x` - input tensor of shape `{batch_size, num_tokens, d_in}`
+    * `opts` - same forward options accepted by
+      `LlmScratch.CausalAttention.forward/3`
+
+  ## Returns
+
+    * tensor of shape `{batch_size, num_tokens, num_heads * d_out}`
   """
   def forward(%__MODULE__{heads: heads}, %Nx.Tensor{} = x, opts \\ []) do
     heads
