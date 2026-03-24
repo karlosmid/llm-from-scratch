@@ -2,6 +2,8 @@ defmodule LlmFromScratch3Test do
   use ExUnit.Case
 
   test "simple self-attention mechanism" do
+    # our input has 6 tokens Your journey starts with one step. Each token has 3 dimensions.
+
     inputs =
       Nx.tensor(
         [
@@ -23,6 +25,9 @@ defmodule LlmFromScratch3Test do
 
     assert Nx.shape(inputs) == {6, 3}
 
+    # In Nx we read this like this: slice along axis 0 (rows), starting from index 1 with length of 1
+    # which gives us query x2: [0.55, 0.87, 0.66]
+
     query =
       inputs
       |> Nx.slice_along_axis(1, 1, axis: 0)
@@ -30,7 +35,13 @@ defmodule LlmFromScratch3Test do
 
     assert Nx.shape(query) == {3}
 
+    # we are doting {6, 3} x {3}, condition is that we can only dot over axis that are same, so 3 with 3
+    # so each row from inputs is multiplied with query. That means to multiply elements of corresponding columns and the sum those values
+    # for first row: score_0 = 0.43*0.55 + 0.15*0.87 + 0.89*0.66
+
     attn_scores_2 = Nx.dot(inputs, [1], query, [0])
+
+    # result is vector with 6 values
 
     assert Nx.shape(attn_scores_2) == {6}
 
@@ -50,6 +61,8 @@ defmodule LlmFromScratch3Test do
     assert Nx.all_close(attn_scores_2, expected_attn_scores_2, atol: 1.0e-6) |> Nx.to_number() ==
              1,
            "Attention scores should match expected values exactly"
+
+    # simple normalization is to divide each column element with sum of all elements
 
     attn_scores_2_normalized =
       Nx.divide(attn_scores_2, Nx.sum(attn_scores_2, axes: [0]))
@@ -73,11 +86,15 @@ defmodule LlmFromScratch3Test do
 
     attn_scores_2_normalized_sum = Nx.sum(attn_scores_2_normalized, axes: [0])
 
+    # so when we sum normalized column elements, value is 1.0 (apparently LLM likes this normalization)
+
     assert Nx.all_close(attn_scores_2_normalized_sum, Nx.tensor([1.0], type: {:f, 32}),
              atol: 1.0e-6
            )
            |> Nx.to_number() == 1,
            "Sum of normalized attention scores should be 1.0"
+
+    # softmax naive (there is a real one), is advanced way of normalization for really big numbers
 
     attn_scores_2_softmax_naive = softmax_naive(attn_scores_2)
 
@@ -102,6 +119,8 @@ defmodule LlmFromScratch3Test do
            |> Nx.to_number() == 1,
            "Softmax of attention scores should match expected values exactly"
 
+    # this is Axon softmax with all optimizations
+
     attn_scores_2_softmax_axon = Axon.Activations.softmax(attn_scores_2)
 
     expected_attn_scores_2_softmax_axon =
@@ -122,6 +141,10 @@ defmodule LlmFromScratch3Test do
            )
            |> Nx.to_number() == 1,
            "Axon Softmax of attention scores should match expected values exactly"
+
+    # {6} x {6, 3} = {3}
+    # here we multiply first row (note that there is only one row) with first column. And we repeat that for all columns (there are three)
+    # remember that multiplication of two one dimensional vectors is multiplication of corresponding elements and then summing them
 
     context_vec_2 = Nx.dot(attn_scores_2_softmax_axon, [0], inputs, [0])
 
