@@ -35,8 +35,8 @@ defmodule LlmFromScratch3Test do
 
     assert Nx.shape(query) == {3}
 
-    # we are doting {6, 3} x {3}, condition is that we can only dot over axis that are same, so 3 with 3
-    # so each row from inputs is multiplied with query. That means to multiply elements of corresponding columns and the sum those values
+    # we are doting {6, 3} dot {3}, condition is that we can only dot over axis that are same, so 3 with 3
+    # so each row from inputs is multiplied with query. That means to multiply elements of corresponding columns and then sum those values
     # for first row: score_0 = 0.43*0.55 + 0.15*0.87 + 0.89*0.66
 
     attn_scores_2 = Nx.dot(inputs, [1], query, [0])
@@ -62,7 +62,7 @@ defmodule LlmFromScratch3Test do
              1,
            "Attention scores should match expected values exactly"
 
-    # simple normalization is to divide each column element with sum of all elements
+    # simple normalization is to divide each column element with sum of all row elements
 
     attn_scores_2_normalized =
       Nx.divide(attn_scores_2, Nx.sum(attn_scores_2, axes: [0]))
@@ -142,7 +142,7 @@ defmodule LlmFromScratch3Test do
            |> Nx.to_number() == 1,
            "Axon Softmax of attention scores should match expected values exactly"
 
-    # {6} x {6, 3} = {3}
+    # {6} dot {6, 3} = {3}
     # here we multiply first row (note that there is only one row) with first column. And we repeat that for all columns (there are three)
     # remember that multiplication of two one dimensional vectors is multiplication of corresponding elements and then summing them
 
@@ -185,6 +185,10 @@ defmodule LlmFromScratch3Test do
       )
 
     # Scores for every query against every key: Q @ K^T
+    # {6, 3} dot {6, 3} = {6, 3} dot {3, 6} (this is transponded second Tensor) = {6, 6}
+    # result in Tensor {6 x 6} where first row is attention of first token with other tokens, and so on for second, third, ...
+    # element {1, 1} is specific because this is attention of token with himself (I appologize for presonelizing token, but I am so excited that I started to understand those calculations!)
+
     attn_scores = Nx.dot(inputs, [1], inputs, [1])
     assert Nx.shape(attn_scores) == {6, 6}
 
@@ -247,6 +251,8 @@ defmodule LlmFromScratch3Test do
            "Attention scores should match expected values exactly"
 
     # Row-wise softmax gives attention weights per query token
+    # do softmax over columns (row by row), which means use last (second) axis, and that is column
+
     attn_weights_softmax = Axon.Activations.softmax(attn_scores, axis: -1)
 
     expected_attn_weights_softmax =
@@ -310,10 +316,18 @@ defmodule LlmFromScratch3Test do
 
     assert Nx.shape(attn_weights_softmax) == {6, 6}
 
+    # [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
     row_sums = Nx.sum(attn_weights_softmax, axes: [1])
+
     ones = Nx.broadcast(Nx.tensor(1.0, type: {:f, 32}), {6})
 
+    # belive it or not, but sum of each row (over columns) is 1!
+
     assert Nx.all_close(row_sums, ones, atol: 1.0e-6) |> Nx.to_number() == 1
+
+    # {6, 6} dot {6, 3} = {6, 3}
+    # result is context vector for all tokens!
 
     context_vecs = Nx.dot(attn_weights_softmax, [1], inputs, [0])
 
@@ -357,16 +371,28 @@ defmodule LlmFromScratch3Test do
         type: {:f, 32}
       )
 
-    x_2 = Nx.slice_along_axis(inputs, 1, 1, axis: 0) |> Nx.squeeze(axes: [0])
-    d_in = Nx.shape(x_2) |> elem(0)
-    d_out = 2
-    key = LlmScratch.Random.manual_seed(123)
+    # we already know this Nx trick how to get second row of Tensor with dimension {6, 3}
 
+    x_2 = Nx.slice_along_axis(inputs, 1, 1, axis: 0) |> Nx.squeeze(axes: [0])
+
+    # this is first dimension of x_2, = 3
+    d_in = Nx.shape(x_2) |> elem(0)
+
+    # this is Sebastian's simplificaiton, so we could easier follow the computation.
+    # in real life, d_out = d_in
+
+    d_out = 2
+    # random key for linear gneration of weights
+
+    key = LlmScratch.Random.manual_seed(123)
     query_weights = Axon.Initializers.uniform(scale: 1.0).({d_in, d_out}, {:f, 32}, key)
     key_weights = Axon.Initializers.uniform(scale: 1.0).({d_in, d_out}, {:f, 32}, key)
     value_weights = Axon.Initializers.uniform(scale: 1.0).({d_in, d_out}, {:f, 32}, key)
 
     # 1x3 dot 3x2 = 1x2
+    # when dimension rule is satisfied, no of columns = no of rows, no need to state this in Nx.dot as Nx.dot(x_2, [1], query_weights, [0])
+    # we can say that we are projecting token from dimension 3 => 2
+
     query_2 = Nx.dot(x_2, query_weights)
     assert Nx.shape(query_2) == {d_out}
     expected_query_2 = Nx.tensor([-0.20726783573627472, -0.3094936013221741], type: {:f, 32})
@@ -374,6 +400,9 @@ defmodule LlmFromScratch3Test do
 
     assert Nx.all_close(query_2, expected_query_2, atol: 1.0e-6) |> Nx.to_number() == 1,
            "query_2 should match expected values exactly"
+
+    # if you are also following examples from Sebastian Python examples, numbers are different
+    # reson is different implementation of Pythorch and Nx random generator
 
     refute Nx.all_close(query_2, expected_query_2_book, atol: 1.0e-6) |> Nx.to_number() == 1,
            "query_2 should not match expected values exactly due to different random number generators in PyTorch and Nx"
@@ -384,6 +413,7 @@ defmodule LlmFromScratch3Test do
     value_2 = Nx.dot(x_2, value_weights)
     assert Nx.shape(value_2) == {d_out}
 
+    # lets calculate all keys and values
     # 6x3 dot 3x2 = 6x2
     keys = Nx.dot(inputs, key_weights)
     assert Nx.shape(keys) == {6, d_out}
@@ -429,6 +459,8 @@ defmodule LlmFromScratch3Test do
              1,
            "attn_scores_2 should match expected values"
 
+    # for normalization we are using last (second) axis of keys
+
     d_k = Nx.axis_size(keys, -1) |> Nx.tensor(type: {:f, 32})
 
     attn_weights_2 =
@@ -455,6 +487,7 @@ defmodule LlmFromScratch3Test do
              1,
            "attn_weights_2 should match expected values"
 
+    # {6} dot {6, 2} = {2}
     context_vec_2 = Nx.dot(attn_weights_2, [0], values, [0])
     assert Nx.shape(context_vec_2) == {d_out}
 
