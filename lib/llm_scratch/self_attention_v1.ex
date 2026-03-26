@@ -61,6 +61,8 @@ defmodule LlmScratch.SelfAttentionV1 do
         other -> raise ArgumentError, "seed must be an integer or nil, got: #{inspect(other)}"
       end
 
+    # in v1 we uniformly initialize weight tensor
+
     w_q = init_weight({d_in, d_out}, key, Keyword.get(opts, :w_q))
     w_k = init_weight({d_in, d_out}, key, Keyword.get(opts, :w_k))
     w_v = init_weight({d_in, d_out}, key, Keyword.get(opts, :w_v))
@@ -84,9 +86,16 @@ defmodule LlmScratch.SelfAttentionV1 do
   def forward(%__MODULE__{} = sa, %Nx.Tensor{} = inputs) do
     validate_input_shape!(inputs, sa.d_in)
 
+    # calculate query, key and values based on inputs and weight Tensors
+    # {no_of_tokens x token_dimension} dot {d_in, d_out} = {no_of_tokens, d_out}
+    # now you know why we validate_input_shape that token_dimension == d_in
+
     q = Nx.dot(inputs, sa.w_q)
     k = Nx.dot(inputs, sa.w_k)
     v = Nx.dot(inputs, sa.w_v)
+
+    # result is context vector {num_of_tokens x d_out}
+
     LlmScratch.SelfAttentionCore.context_from_qkv(q, k, v, sa.d_out)
   end
 

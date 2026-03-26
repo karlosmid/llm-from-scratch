@@ -1,5 +1,8 @@
 defmodule LlmScratch.SelfAttentionCore do
-  @moduledoc false
+  @moduledoc """
+  has function that is shared in LlmScratch.SelfAttentionV1 and LlmScratch.SelfAttentionV2
+
+  """
 
   @spec context_from_qkv(Nx.Tensor.t(), Nx.Tensor.t(), Nx.Tensor.t(), pos_integer()) ::
           Nx.Tensor.t()
@@ -19,6 +22,9 @@ defmodule LlmScratch.SelfAttentionCore do
     * context tensor of shape `{num_tokens, d_out}`.
   """
   def context_from_qkv(q, k, v, d_out) do
+    # {no_of_tokens, d_out} dot {no_of_tokens, d_out} = {no_of_tokens, no_of_tokens}
+    # dot over second dimension d_out
+
     attn_scores = Nx.dot(q, [1], k, [1])
     d_k = Nx.tensor(d_out, type: {:f, 32})
 
@@ -26,6 +32,9 @@ defmodule LlmScratch.SelfAttentionCore do
       attn_scores
       |> Nx.divide(Nx.sqrt(d_k))
       |> Axon.Activations.softmax(axis: -1)
+
+    # {no_of_tokens, no_of_tokens} dot {no_of_tokens, d_out} = {no_of_tokens, d_out}
+    # because we are dotting row (over second dimension) with column (over first dimension)
 
     Nx.dot(attn_weights, [1], v, [0])
   end
