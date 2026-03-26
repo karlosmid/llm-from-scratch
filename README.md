@@ -4,6 +4,8 @@ An Elixir/Nx playground for implementing language-model building blocks from scr
 
 This repository is not a generic OTP example. It is a learning and experimentation project focused on reproducing pieces of modern LLM pipelines in Elixir, largely following the progression from tokenization through attention mechanisms.
 
+The work here is based on Sebastian Raschka's book *Build a Large Language Model (From Scratch)*, with the examples and exercises reimplemented in Elixir using Nx, Axon, and related tools.
+
 ## What This Repo Covers
 
 - Tokenization with both a simple custom tokenizer and `tiktoken`
@@ -101,3 +103,5 @@ The attention modules are written to make the tensor shapes and math explicit, w
 ## Purpose
 
 The purpose of this repo is to understand LLM internals by implementing them directly in Elixir instead of treating the model stack as a black box. It is best read as an executable notebook in code form: small modules, shape-aware tests, and experiments that build toward GPT-style components.
+
+If you know the book *Build a Large Language Model (From Scratch)*, this repo is effectively an Elixir/Nx companion implementation of that learning path.
