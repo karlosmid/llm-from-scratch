@@ -600,6 +600,8 @@ defmodule LlmFromScratch3Test do
 
     # Axon dense kernels in this project are already shaped {d_in, d_out},
     # matching V1's expected projection weight layout.
+    # goal of this exercise is to show that v1 and v2 have same calculations, only difference are weight Tensors
+
     sa_v1 =
       LlmScratch.SelfAttentionV1.new(3, 2,
         w_q: sa_v2.w_q.kernel,
@@ -631,11 +633,23 @@ defmodule LlmFromScratch3Test do
         type: {:f, 32}
       )
 
+    # first step
+    # start with self attention module v2 from our previous chapter
+
     sa_v2 = LlmScratch.SelfAttentionV2.new(3, 2, seed: 123)
+
+    # torch like linear projection
 
     queries = LlmScratch.SelfAttentionV2.dense_project(inputs, sa_v2.w_q)
     keys = LlmScratch.SelfAttentionV2.dense_project(inputs, sa_v2.w_k)
+
+    # {6,2} dot {6,2} = {6,6} where we connect on second axis of first and second Tensor
+    # remember the condition for Tensor dot product!
+    # we are actually transponding second Tensor
+
     attn_scores = Nx.dot(queries, [1], keys, [1])
+
+    # normalize attention scores with softmax to get attention weights, sum of each row is 1
 
     attn_weights =
       Nx.divide(attn_scores, Nx.sqrt(Nx.axis_size(keys, -1)))
@@ -701,6 +715,8 @@ defmodule LlmFromScratch3Test do
 
     assert Nx.shape(attn_weights) == {6, 6}
 
+    # second step, zero out values above the diagonal in attention weights
+
     context_length = Nx.axis_size(attn_scores, 0)
 
     mask_simple =
@@ -722,6 +738,12 @@ defmodule LlmFromScratch3Test do
 
     assert Nx.all_close(mask_simple, mask_simple_expected, atol: 1.0e-6) |> Nx.to_number() == 1,
            "mask_simple should match expected values"
+
+    # to apply mask we are multiplying attention weights with mask_simple
+    # {6 x 6} x {6, 6} = {6, 6}
+    # multiply first row element in first tensor with first row element in second Tensor.
+    # then continue with second elements in row
+    # effect is that elements multiplied with zero are zeroed out
 
     masked_attn_weights = Nx.multiply(attn_weights, mask_simple)
 
@@ -767,7 +789,12 @@ defmodule LlmFromScratch3Test do
            |> Nx.to_number() == 1,
            "masked_attn_weights should match expected values"
 
+    # Third step is row normalization for masked attention weights, sum of each row must be 1
+    # sum of each row
+
     row_sums = Nx.sum(masked_attn_weights, axes: [-1], keep_axes: true)
+
+    # each row element is divided with row sum
 
     masked_attn_weights_norm =
       Nx.divide(masked_attn_weights, row_sums)
@@ -810,6 +837,9 @@ defmodule LlmFromScratch3Test do
            |> Nx.to_number() == 1,
            "masked_attn_weights_norm should match expected values"
 
+    # improvement, masking witn negative infinity instead of 1
+    # this is again step 2, we start from attn_scores
+
     mask =
       Nx.broadcast(1.0, {context_length, context_length})
       # upper triangle above diagonal
@@ -817,9 +847,9 @@ defmodule LlmFromScratch3Test do
 
     mask_bool = Nx.greater(mask, 0.0)
     neg_inf = Nx.broadcast(:neg_infinity, Nx.shape(attn_scores))
-    masked = Nx.select(mask_bool, neg_inf, attn_scores)
+    masked_neg_inf_attn_scores = Nx.select(mask_bool, neg_inf, attn_scores)
 
-    expected_masked =
+    expected_masked_neg_inf_att_scores =
       Nx.tensor(
         [
           [
@@ -874,14 +904,17 @@ defmodule LlmFromScratch3Test do
         type: {:f, 32}
       )
 
-    assert Nx.all(Nx.equal(masked, expected_masked)) |> Nx.to_number() == 1,
+    assert Nx.all(Nx.equal(masked_neg_inf_attn_scores, expected_masked_neg_inf_att_scores))
+           |> Nx.to_number() == 1,
            "masked should match expected values"
 
-    masked_attn_weights_causal =
-      Nx.divide(masked, Nx.sqrt(Nx.axis_size(keys, -1)))
+    # softmax normalization, note that rows are summing to one out of the box, thanks to negative infinity trick!
+
+    masked_neg_inf_attn_weights_causal =
+      Nx.divide(masked_neg_inf_attn_scores, Nx.sqrt(Nx.axis_size(keys, -1)))
       |> Axon.Activations.softmax(axis: -1)
 
-    expected_masked_attn_weights_causal =
+    expected_masked_neg_inf_attn_weights_causal =
       Nx.tensor(
         [
           [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -915,9 +948,9 @@ defmodule LlmFromScratch3Test do
         type: {:f, 32}
       )
 
-    assert Nx.all_close(masked_attn_weights_causal, expected_masked_attn_weights_causal,
-             atol: 1.0e-6
-           )
+    assert Nx.all_close(
+             masked_neg_inf_attn_weights_causal,
+             expected_masked_neg_inf_attn_weights_causal, atol: 1.0e-6)
            |> Nx.to_number() == 1,
            "masked_attn_weights_causal should match expected values"
   end
