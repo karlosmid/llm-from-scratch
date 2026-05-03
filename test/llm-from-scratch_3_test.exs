@@ -950,14 +950,20 @@ defmodule LlmFromScratch3Test do
 
     assert Nx.all_close(
              masked_neg_inf_attn_weights_causal,
-             expected_masked_neg_inf_attn_weights_causal, atol: 1.0e-6)
+             expected_masked_neg_inf_attn_weights_causal,
+             atol: 1.0e-6
+           )
            |> Nx.to_number() == 1,
            "masked_attn_weights_causal should match expected values"
   end
 
   test "dropout" do
     key = Nx.Random.key(123)
+
+    # Set a {6 x 6} tensor filled with ones.
+
     example = Nx.broadcast(1.0, {6, 6})
+    # Axon provides a dropout function.
 
     %Axon.StatefulOutput{output: dropped, state: %{"key" => _new_key}} =
       Axon.Layers.dropout(example, key, rate: 0.5, mode: :train)
@@ -978,7 +984,9 @@ defmodule LlmFromScratch3Test do
     assert Nx.all_close(dropped, expected_dropped, atol: 1.0e-6) |> Nx.to_number() == 1,
            "dropped should match expected values"
 
-    masked_attn_weights_causal =
+    # Causal attention weights from the previous test.
+
+    masked_neg_inf_attn_weights_causal =
       Nx.tensor(
         [
           [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -1012,10 +1020,13 @@ defmodule LlmFromScratch3Test do
         type: {:f, 32}
       )
 
-    %Axon.StatefulOutput{output: masked_attn_weights_causal_dropped, state: %{"key" => _new_key}} =
-      Axon.Layers.dropout(masked_attn_weights_causal, key, rate: 0.5, mode: :train)
+    %Axon.StatefulOutput{
+      output: masked_neg_inf_attn_weights_causal_dropped,
+      state: %{"key" => _new_key}
+    } =
+      Axon.Layers.dropout(masked_neg_inf_attn_weights_causal, key, rate: 0.5, mode: :train)
 
-    expected_masked_attn_weights_causal_dropped =
+    expected_masked_neg_inf_attn_weights_causal_dropped =
       Nx.tensor(
         [
           [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -1029,8 +1040,8 @@ defmodule LlmFromScratch3Test do
       )
 
     assert Nx.all_close(
-             masked_attn_weights_causal_dropped,
-             expected_masked_attn_weights_causal_dropped,
+             masked_neg_inf_attn_weights_causal_dropped,
+             expected_masked_neg_inf_attn_weights_causal_dropped,
              atol: 1.0e-6
            )
            |> Nx.to_number() == 1,
@@ -1060,6 +1071,8 @@ defmodule LlmFromScratch3Test do
     context_vecs = LlmScratch.CausalAttention.forward(ca, batch, mode: :inference)
 
     assert Nx.shape(context_vecs) == {2, 6, 2}
+
+    # we batched same input twice, which means that shape on axis: 0 is 2, as first outermost list has two elements
 
     expected_context_vecs =
       Nx.tensor(
