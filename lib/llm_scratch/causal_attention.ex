@@ -129,6 +129,10 @@ defmodule LlmScratch.CausalAttention do
     queries = SelfAttentionV2.dense_project(x, ca.w_q)
     values = SelfAttentionV2.dense_project(x, ca.w_v)
 
+    # {no_of_batches, num_tokens, d_out} dot {no_of_batches, num_tokens, d_out}
+    # we are dotting tensors over axis 2 (last one), [0] means that batch is on axis 0
+    # so for each batch we are dotting {num_tokens, d_out} dot {num_tokens, d_out}
+
     attn_scores = Nx.dot(queries, [2], [0], keys, [2], [0])
 
     mask =
@@ -145,6 +149,9 @@ defmodule LlmScratch.CausalAttention do
       |> Nx.divide(Nx.sqrt(Nx.axis_size(keys, -1)))
       |> Axon.Activations.softmax(axis: -1)
       |> maybe_dropout(ca, opts)
+
+    # {no_of_batches, no_of_tokens, no_of_tokens} dot {no_of_batches, no_of_tokens, d_out}
+    # {no_of_batches, no_of_tokens, d_out}
 
     Nx.dot(attn_weights, [2], [0], values, [1], [0])
   end
