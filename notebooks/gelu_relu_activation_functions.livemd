@@ -1,0 +1,57 @@
+# GELU and ReLU Activation Functions
+
+```elixir
+project_path = Path.expand("..", __DIR__)
+
+Mix.install([
+  {:llm_scratch, path: project_path},
+  {:kino, "~> 0.12"},
+  {:kino_vega_lite, "~> 0.1.11"},
+  {:vega_lite, "~> 0.1.9"}
+])
+```
+
+## Plot activations
+
+```elixir
+alias LlmScratch.GELU
+alias VegaLite, as: Vl
+
+gelu = GELU.new()
+
+x =
+  Nx.iota({100}, type: {:f, 32})
+  |> Nx.multiply(6.0 / 99.0)
+  |> Nx.add(-3.0)
+
+y_gelu = GELU.forward(gelu, x)
+y_relu = Nx.select(Nx.greater(x, 0.0), x, 0.0)
+
+x_values = Nx.to_flat_list(x)
+
+data =
+  [
+    {"GELU", Nx.to_flat_list(y_gelu)},
+    {"ReLU", Nx.to_flat_list(y_relu)}
+  ]
+  |> Enum.flat_map(fn {activation, y_values} ->
+    x_values
+    |> Enum.zip(y_values)
+    |> Enum.map(fn {x_value, y_value} ->
+      %{
+        activation: activation,
+        x: x_value,
+        y: y_value
+      }
+    end)
+  end)
+
+Vl.new(width: 300, height: 220)
+|> Vl.data_from_values(data)
+|> Vl.mark(:line)
+|> Vl.encode_field(:x, "x", type: :quantitative, title: "x")
+|> Vl.encode_field(:y, "y", type: :quantitative, title: "activation(x)")
+|> Vl.encode_field(:column, "activation", type: :nominal, title: nil)
+|> Vl.resolve(:scale, y: :independent)
+|> Kino.VegaLite.new()
+```
