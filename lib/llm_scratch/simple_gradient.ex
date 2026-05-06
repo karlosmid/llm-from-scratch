@@ -31,6 +31,36 @@ defmodule LlmScratch.SimpleGradient do
   end
 
   @doc """
+  Computes mean squared error loss.
+
+  This mirrors `nn.MSELoss()` in the PyTorch examples. It is defined with
+  `Nx.Defn`, so it can be called from other differentiable functions that use
+  `grad/2` or `value_and_grad/2`.
+
+  ## Parameters
+
+    * `output` - predicted values.
+    * `target` - expected values with a shape compatible with `output`.
+
+  ## Returns
+
+  A scalar tensor with the mean of `(output - target)^2`.
+
+  ## Example
+
+      iex> output = Nx.tensor([[1.0, 2.0]])
+      iex> target = Nx.tensor([[0.0, 1.0]])
+      iex> LlmScratch.SimpleGradient.mse_loss(output, target) |> Nx.to_number()
+      1.0
+  """
+  defn mse_loss(output, target) do
+    output
+    |> Nx.subtract(target)
+    |> Nx.pow(2)
+    |> Nx.mean()
+  end
+
+  @doc """
   Computes the gradient of `loss/4` with respect to `w1`.
 
   ## Parameters

@@ -19,6 +19,8 @@ defmodule LlmScratch.FeedForward do
   the output has the same shape.
   """
 
+  import Nx.Defn
+
   alias LlmScratch.{GELU, GPTConfig, SelfAttentionV2}
 
   defstruct [:emb_dim, :layers]
@@ -90,17 +92,30 @@ defmodule LlmScratch.FeedForward do
     validate_last_axis!(x, feed_forward.emb_dim)
 
     x
-    |> linear(feed_forward.layers.first)
+    |> linear_defn(feed_forward.layers.first)
     |> GELU.forward()
-    |> linear(feed_forward.layers.second)
+    |> linear_defn(feed_forward.layers.second)
   end
 
   @spec call(t(), Nx.Tensor.t()) :: Nx.Tensor.t()
   def call(feed_forward, x), do: forward(feed_forward, x)
 
-  defp linear(x, %{kernel: kernel, bias: bias}) do
-    axis = tuple_size(Nx.shape(x)) - 1
-    Nx.add(Nx.dot(x, [axis], kernel, [0]), bias)
+  @doc """
+  Applies a dense layer over the last axis of `x`.
+
+  The dense weights are maps with `:kernel` shaped `{d_in, d_out}` and `:bias`
+  shaped `{d_out}`. The function is defined with `Nx.Defn`, so it can be reused
+  inside differentiable code such as `Nx.Defn.value_and_grad/2`.
+
+  ## Example
+
+      iex> layer = %{kernel: Nx.broadcast(1.0, {3, 2}), bias: Nx.tensor([0.1, -0.1])}
+      iex> x = Nx.tensor([[1.0, 2.0, 3.0]])
+      iex> LlmScratch.FeedForward.linear_defn(x, layer) |> Nx.to_flat_list()
+      [6.1, 5.9]
+  """
+  defn linear_defn(x, %{kernel: kernel, bias: bias}) do
+    Nx.add(Nx.dot(x, [-1], kernel, [0]), bias)
   end
 
   defp emb_dim_from_cfg!(%GPTConfig{emb_dim: emb_dim}), do: validate_emb_dim!(emb_dim)

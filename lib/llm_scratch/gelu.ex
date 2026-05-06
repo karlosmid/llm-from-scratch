@@ -22,6 +22,8 @@ defmodule LlmScratch.GELU do
   module-style shape used by other examples in this project.
   """
 
+  import Nx.Defn
+
   defstruct []
 
   @type t :: %__MODULE__{}
@@ -71,6 +73,22 @@ defmodule LlmScratch.GELU do
       [-0.003637, 0.0, 2.996363]
   """
   def forward(%Nx.Tensor{} = x) do
+    forward_defn(x)
+  end
+
+  @doc """
+  Applies GELU inside `Nx.Defn` code.
+
+  Use this function from other `defn`/`defnp` functions when the activation
+  needs to participate in automatic differentiation.
+
+  ## Example
+
+      iex> x = Nx.tensor([[-3.0, 0.0, 3.0]])
+      iex> LlmScratch.GELU.forward_defn(x) |> Nx.round(6) |> Nx.to_flat_list()
+      [-0.003637, 0.0, 2.996363]
+  """
+  defn forward_defn(x) do
     x_cubed = Nx.pow(x, 3)
     inner = Nx.multiply(@sqrt_2_over_pi, Nx.add(x, Nx.multiply(0.044715, x_cubed)))
 

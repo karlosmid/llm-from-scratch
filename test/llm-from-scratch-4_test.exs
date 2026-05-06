@@ -1,7 +1,15 @@
 defmodule LlmFromScratch4Test do
   use ExUnit.Case
 
-  alias LlmScratch.{DummyGPTModel, DummyLayerNorm, FeedForward, GELU, GPTConfig, SimpleGradient}
+  alias LlmScratch.{
+    DummyGPTModel,
+    DummyLayerNorm,
+    ExampleDeepNeuralNetwork,
+    FeedForward,
+    GELU,
+    GPTConfig,
+    SimpleGradient
+  }
 
   test "dummy GPT model returns logits for GPT-2 tokenized batch" do
     previous_backend = Nx.default_backend()
@@ -168,5 +176,59 @@ defmodule LlmFromScratch4Test do
     out = FeedForward.forward(feed_forward, x)
 
     assert Nx.shape(out) == {2, 3, 768}
+  end
+
+  test "deep neural network asserts layer weight gradient means without shortcuts" do
+    layer_sizes = [3, 3, 3, 3, 3, 1]
+    sample_input = Nx.tensor([[1.0, 0.0, -1.0]], type: {:f, 32})
+    target = Nx.tensor([[0.0]], type: {:f, 32})
+
+    model = ExampleDeepNeuralNetwork.new(layer_sizes, use_shortcut: false, seed: 123)
+
+    {loss, gradients} = ExampleDeepNeuralNetwork.backward(model, sample_input, target)
+    gradient_means = ExampleDeepNeuralNetwork.weight_gradient_means(gradients)
+
+    assert Nx.shape(ExampleDeepNeuralNetwork.forward(model, sample_input)) == {1, 1}
+    assert_close(loss, Nx.tensor(2.9010625e-6, type: {:f, 32}), atol: 1.0e-12)
+
+    assert_close(Enum.at(gradient_means, 0), Nx.tensor(1.9688005e-5), atol: 1.0e-10)
+    assert_close(Enum.at(gradient_means, 1), Nx.tensor(8.4962267e-6), atol: 1.0e-10)
+    assert_close(Enum.at(gradient_means, 2), Nx.tensor(1.0740861e-5), atol: 1.0e-10)
+    assert_close(Enum.at(gradient_means, 3), Nx.tensor(1.0382744e-5), atol: 1.0e-10)
+    assert_close(Enum.at(gradient_means, 4), Nx.tensor(5.419739e-6), atol: 1.0e-10)
+  end
+
+  test "deep neural network asserts larger gradient flow with shortcuts" do
+    layer_sizes = [3, 3, 3, 3, 3, 1]
+    sample_input = Nx.tensor([[1.0, 0.0, -1.0]], type: {:f, 32})
+    target = Nx.tensor([[0.0]], type: {:f, 32})
+
+    model = ExampleDeepNeuralNetwork.new(layer_sizes, use_shortcut: true, seed: 123)
+
+    {loss, gradients} = ExampleDeepNeuralNetwork.backward(model, sample_input, target)
+    gradient_means = ExampleDeepNeuralNetwork.weight_gradient_means(gradients)
+
+    assert Nx.shape(ExampleDeepNeuralNetwork.forward(model, sample_input)) == {1, 1}
+    assert_close(loss, Nx.tensor(0.02248338, type: {:f, 32}), atol: 1.0e-8)
+
+    assert_close(Enum.at(gradient_means, 0), Nx.tensor(0.0034418134), atol: 1.0e-8)
+    assert_close(Enum.at(gradient_means, 1), Nx.tensor(0.008453862), atol: 1.0e-8)
+    assert_close(Enum.at(gradient_means, 2), Nx.tensor(0.0049184095), atol: 1.0e-8)
+    assert_close(Enum.at(gradient_means, 3), Nx.tensor(0.003547175), atol: 1.0e-8)
+    assert_close(Enum.at(gradient_means, 4), Nx.tensor(0.00962014), atol: 1.0e-8)
+
+    without_shortcut =
+      ExampleDeepNeuralNetwork.new(layer_sizes, use_shortcut: false, seed: 123)
+
+    {_loss, without_shortcut_gradients} =
+      ExampleDeepNeuralNetwork.backward(without_shortcut, sample_input, target)
+
+    without_shortcut_gradient_means =
+      ExampleDeepNeuralNetwork.weight_gradient_means(without_shortcut_gradients)
+
+    Enum.zip(gradient_means, without_shortcut_gradient_means)
+    |> Enum.each(fn {with_shortcut_mean, without_shortcut_mean} ->
+      assert Nx.greater(with_shortcut_mean, without_shortcut_mean) |> Nx.to_number() == 1
+    end)
   end
 end
