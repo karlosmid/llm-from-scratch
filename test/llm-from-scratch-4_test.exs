@@ -7,6 +7,7 @@ defmodule LlmFromScratch4Test do
     ExampleDeepNeuralNetwork,
     FeedForward,
     GELU,
+    GPTModel,
     GPTConfig,
     SimpleGradient,
     TransformerBlock
@@ -254,5 +255,183 @@ defmodule LlmFromScratch4Test do
 
     assert Nx.shape(x) == {2, 4, 768}
     assert Nx.shape(output) == {2, 4, 768}
+  end
+
+  test "GPT-124M model returns logits for input batch" do
+    previous_backend = Nx.default_backend()
+    Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    gpt_config_124m = %GPTConfig{
+      vocab_size: 50_257,
+      context_length: 1024,
+      emb_dim: 768,
+      n_heads: 12,
+      n_layers: 12,
+      drop_rate: 0.1,
+      qkv_bias: false
+    }
+
+    batch =
+      Nx.tensor(
+        [
+          [6109, 3626, 6100, 345],
+          [6109, 1110, 6622, 257]
+        ],
+        type: {:s, 64}
+      )
+
+    model = GPTModel.new(gpt_config_124m, seed: 123)
+    total_params = total_parameters(model)
+    total_size_mb = total_params * 4 / 1024 / 1024
+    total_params_with_weight_tying = total_params - count_tensor(model.out_head.kernel)
+    out = GPTModel.forward(model, batch)
+
+    assert Nx.equal(
+             batch,
+             Nx.tensor(
+               [
+                 [6109, 3626, 6100, 345],
+                 [6109, 1110, 6622, 257]
+               ],
+               type: {:s, 64}
+             )
+           )
+           |> Nx.all()
+           |> Nx.to_number() == 1
+
+    assert total_params == 163_009_536
+    assert total_size_mb == 621.83203125
+    assert Nx.shape(out) == {2, 4, 50_257}
+    assert %Nx.Tensor{} = out
+    assert total_params_with_weight_tying == 124_412_160
+  end
+
+  test "exercise 4.1 compares feed forward and multi-head attention parameter counts" do
+    previous_backend = Nx.default_backend()
+    Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    gpt_config_124m = %GPTConfig{
+      vocab_size: 50_257,
+      context_length: 1024,
+      emb_dim: 768,
+      n_heads: 12,
+      n_layers: 12,
+      drop_rate: 0.1,
+      qkv_bias: false
+    }
+
+    block = TransformerBlock.new(gpt_config_124m, seed: 123)
+
+    feed_forward_params = count_feed_forward(block.ff)
+    attention_params = count_attention(block.att)
+
+    assert feed_forward_params == 4_722_432
+    assert attention_params == 2_360_064
+    assert feed_forward_params == 2 * attention_params + 2_304
+    assert feed_forward_params > attention_params
+  end
+
+  test "exercise 4.2 initializes GPT-2 medium config and counts parameters" do
+    gpt2_medium_config = %GPTConfig{
+      vocab_size: 50_257,
+      context_length: 1024,
+      emb_dim: 1024,
+      n_heads: 16,
+      n_layers: 24,
+      drop_rate: 0.1,
+      qkv_bias: false
+    }
+
+    assert gpt2_medium_config.emb_dim == 1024
+    assert gpt2_medium_config.n_layers == 24
+    assert gpt2_medium_config.n_heads == 16
+    assert rem(gpt2_medium_config.emb_dim, gpt2_medium_config.n_heads) == 0
+    assert gpt_parameter_count(gpt2_medium_config) == 406_212_608
+  end
+
+  test "exercise 4.2 initializes GPT-2 large config and counts parameters" do
+    gpt2_large_config = %GPTConfig{
+      vocab_size: 50_257,
+      context_length: 1024,
+      emb_dim: 1280,
+      n_heads: 20,
+      n_layers: 36,
+      drop_rate: 0.1,
+      qkv_bias: false
+    }
+
+    assert gpt2_large_config.emb_dim == 1280
+    assert gpt2_large_config.n_layers == 36
+    assert gpt2_large_config.n_heads == 20
+    assert rem(gpt2_large_config.emb_dim, gpt2_large_config.n_heads) == 0
+    assert gpt_parameter_count(gpt2_large_config) == 838_220_800
+  end
+
+  test "exercise 4.2 initializes GPT-2 XL config and counts parameters" do
+    gpt2_xl_config = %GPTConfig{
+      vocab_size: 50_257,
+      context_length: 1024,
+      emb_dim: 1600,
+      n_heads: 25,
+      n_layers: 48,
+      drop_rate: 0.1,
+      qkv_bias: false
+    }
+
+    assert gpt2_xl_config.emb_dim == 1600
+    assert gpt2_xl_config.n_layers == 48
+    assert gpt2_xl_config.n_heads == 25
+    assert rem(gpt2_xl_config.emb_dim, gpt2_xl_config.n_heads) == 0
+    assert gpt_parameter_count(gpt2_xl_config) == 1_637_792_000
+  end
+
+  defp total_parameters(%GPTModel{} = model) do
+    model.tok_emb.weight
+    |> count_tensor()
+    |> Kernel.+(count_tensor(model.pos_emb.weight))
+    |> Kernel.+(Enum.reduce(model.trf_blocks, 0, &(&2 + count_transformer_block(&1))))
+    |> Kernel.+(count_layer_norm(model.final_norm))
+    |> Kernel.+(count_tensor(model.out_head.kernel))
+  end
+
+  defp count_transformer_block(block) do
+    count_attention(block.att) +
+      count_feed_forward(block.ff) +
+      count_layer_norm(block.norm1) +
+      count_layer_norm(block.norm2)
+  end
+
+  defp count_attention(attention) do
+    attention.w_q
+    |> count_dense(attention.qkv_bias)
+    |> Kernel.+(count_dense(attention.w_k, attention.qkv_bias))
+    |> Kernel.+(count_dense(attention.w_v, attention.qkv_bias))
+    |> Kernel.+(count_dense(attention.out_proj, true))
+  end
+
+  defp count_feed_forward(feed_forward) do
+    count_dense(feed_forward.layers.first, true) +
+      count_dense(feed_forward.layers.second, true)
+  end
+
+  defp count_layer_norm(layer_norm) do
+    count_tensor(layer_norm.scale) + count_tensor(layer_norm.shift)
+  end
+
+  defp count_dense(%{kernel: kernel, bias: bias}, true),
+    do: count_tensor(kernel) + count_tensor(bias)
+
+  defp count_dense(%{kernel: kernel}, false), do: count_tensor(kernel)
+
+  defp count_tensor(tensor), do: Nx.size(tensor)
+
+  defp gpt_parameter_count(%GPTConfig{} = cfg) do
+    embedding_params = 2 * cfg.vocab_size * cfg.emb_dim + cfg.context_length * cfg.emb_dim
+    block_params = cfg.n_layers * (12 * cfg.emb_dim * cfg.emb_dim + 10 * cfg.emb_dim)
+    final_norm_params = 2 * cfg.emb_dim
+
+    embedding_params + block_params + final_norm_params
   end
 end
