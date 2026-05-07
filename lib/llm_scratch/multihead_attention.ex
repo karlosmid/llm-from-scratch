@@ -238,21 +238,42 @@ defmodule LlmScratch.MultiheadAttention do
     |> Nx.transpose(axes: [0, 2, 1, 3])
   end
 
-  defp maybe_dropout(attn_weights, %{dropout: dropout}, _opts) when dropout <= 0.0,
-    do: attn_weights
+  @doc """
+  Applies dropout to a tensor when `mode: :train`.
 
-  defp maybe_dropout(attn_weights, %{dropout: dropout, seed: seed}, opts) do
+  This helper is shared by attention-weight dropout and transformer-block
+  shortcut dropout. The `dropout_config` map must contain `:dropout`; when the
+  dropout rate is greater than zero and train mode is active it must also
+  contain `:seed`, unless a `:key` option is provided.
+
+  Options:
+
+    * `:mode` - `:train` applies dropout, any other value leaves `x` unchanged.
+      Defaults to `:train` for backward compatibility with attention forward
+      passes.
+    * `:key` - optional `Nx.Random` key for deterministic dropout.
+  """
+  @spec maybe_dropout(
+          Nx.Tensor.t(),
+          %{required(:dropout) => number(), optional(:seed) => integer()},
+          keyword()
+        ) ::
+          Nx.Tensor.t()
+  def maybe_dropout(x, %{dropout: dropout}, _opts) when dropout <= 0.0,
+    do: x
+
+  def maybe_dropout(x, %{dropout: dropout, seed: seed}, opts) do
     mode = Keyword.get(opts, :mode, :train)
 
     if mode == :train do
       key = Keyword.get(opts, :key) || Nx.Random.key(seed)
 
       %Axon.StatefulOutput{output: dropped, state: %{"key" => _new_key}} =
-        Axon.Layers.dropout(attn_weights, key, rate: dropout, mode: :train)
+        Axon.Layers.dropout(x, key, rate: dropout, mode: :train)
 
       dropped
     else
-      attn_weights
+      x
     end
   end
 

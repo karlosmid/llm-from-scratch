@@ -8,7 +8,8 @@ defmodule LlmFromScratch4Test do
     FeedForward,
     GELU,
     GPTConfig,
-    SimpleGradient
+    SimpleGradient,
+    TransformerBlock
   }
 
   test "dummy GPT model returns logits for GPT-2 tokenized batch" do
@@ -230,5 +231,28 @@ defmodule LlmFromScratch4Test do
     |> Enum.each(fn {with_shortcut_mean, without_shortcut_mean} ->
       assert Nx.greater(with_shortcut_mean, without_shortcut_mean) |> Nx.to_number() == 1
     end)
+  end
+
+  test "transformer block preserves GPT-124M hidden state shape" do
+    previous_backend = Nx.default_backend()
+    Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    gpt_config_124m = %GPTConfig{
+      vocab_size: 50_257,
+      context_length: 1024,
+      emb_dim: 768,
+      n_heads: 12,
+      n_layers: 12,
+      drop_rate: 0.1,
+      qkv_bias: false
+    }
+
+    {x, _key} = Nx.Random.uniform(Nx.Random.key(123), 0.0, 1.0, shape: {2, 4, 768})
+    block = TransformerBlock.new(gpt_config_124m, seed: 123)
+    output = TransformerBlock.forward(block, x)
+
+    assert Nx.shape(x) == {2, 4, 768}
+    assert Nx.shape(output) == {2, 4, 768}
   end
 end
