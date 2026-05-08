@@ -67,4 +67,56 @@ defmodule LlmScratch.GPTConfig do
           drop_rate: float(),
           qkv_bias: boolean()
         }
+
+  @spec estimated_parameter_count(t()) :: non_neg_integer()
+  @doc """
+  Estimates GPT model parameters directly from the configuration.
+
+  This mirrors the architecture used by `LlmScratch.GPTModel` without
+  allocating tensors:
+
+    * token embeddings: `vocab_size * emb_dim`
+    * positional embeddings: `context_length * emb_dim`
+    * untied output projection: `emb_dim * vocab_size`
+    * each transformer block: attention projections, feed-forward projections,
+      and two layer norms
+    * final layer norm: scale and shift, each shaped `{emb_dim}`
+
+  Use `LlmScratch.GPTModel.total_parameters/1` when you already have a
+  concrete model and want to count its actual tensors.
+  """
+  def estimated_parameter_count(%__MODULE__{} = cfg) do
+    token_embedding_params = cfg.vocab_size * cfg.emb_dim
+    positional_embedding_params = cfg.context_length * cfg.emb_dim
+    output_projection_params = cfg.emb_dim * cfg.vocab_size
+    block_params = cfg.n_layers * estimated_transformer_block_parameter_count(cfg)
+    final_norm_params = estimated_layer_norm_parameter_count(cfg.emb_dim)
+
+    token_embedding_params + positional_embedding_params + output_projection_params + block_params +
+      final_norm_params
+  end
+
+  defp estimated_transformer_block_parameter_count(cfg) do
+    estimated_attention_parameter_count(cfg) +
+      estimated_feed_forward_parameter_count(cfg.emb_dim) +
+      2 * estimated_layer_norm_parameter_count(cfg.emb_dim)
+  end
+
+  defp estimated_attention_parameter_count(cfg) do
+    qkv_kernel_params = 3 * cfg.emb_dim * cfg.emb_dim
+    qkv_bias_params = if cfg.qkv_bias, do: 3 * cfg.emb_dim, else: 0
+    output_projection_params = cfg.emb_dim * cfg.emb_dim + cfg.emb_dim
+
+    qkv_kernel_params + qkv_bias_params + output_projection_params
+  end
+
+  defp estimated_feed_forward_parameter_count(emb_dim) do
+    expanded_dim = 4 * emb_dim
+    first_projection_params = emb_dim * expanded_dim + expanded_dim
+    second_projection_params = expanded_dim * emb_dim + emb_dim
+
+    first_projection_params + second_projection_params
+  end
+
+  defp estimated_layer_norm_parameter_count(emb_dim), do: 2 * emb_dim
 end

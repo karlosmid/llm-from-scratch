@@ -109,6 +109,68 @@ defmodule LlmScratch.GPTModel do
   """
   def call(model, in_idx), do: forward(model, in_idx)
 
+  @spec total_parameters(t()) :: non_neg_integer()
+  @doc """
+  Counts all trainable parameters in the GPT model.
+
+  The count includes token embeddings, positional embeddings, every
+  transformer block, the final layer norm, and the output projection.
+  """
+  def total_parameters(%__MODULE__{} = model) do
+    model.tok_emb.weight
+    |> tensor_parameters()
+    |> Kernel.+(tensor_parameters(model.pos_emb.weight))
+    |> Kernel.+(Enum.reduce(model.trf_blocks, 0, &(&2 + transformer_block_parameters(&1))))
+    |> Kernel.+(layer_norm_parameters(model.final_norm))
+    |> Kernel.+(tensor_parameters(model.out_head.kernel))
+  end
+
+  @spec transformer_block_parameters(map()) :: non_neg_integer()
+  @doc """
+  Counts parameters in one transformer block.
+  """
+  def transformer_block_parameters(block) do
+    attention_parameters(block.att) +
+      feed_forward_parameters(block.ff) +
+      layer_norm_parameters(block.norm1) +
+      layer_norm_parameters(block.norm2)
+  end
+
+  @spec attention_parameters(map()) :: non_neg_integer()
+  @doc """
+  Counts parameters in a multi-head attention module.
+  """
+  def attention_parameters(attention) do
+    attention.w_q
+    |> dense_parameters(attention.qkv_bias)
+    |> Kernel.+(dense_parameters(attention.w_k, attention.qkv_bias))
+    |> Kernel.+(dense_parameters(attention.w_v, attention.qkv_bias))
+    |> Kernel.+(dense_parameters(attention.out_proj, true))
+  end
+
+  @spec feed_forward_parameters(map()) :: non_neg_integer()
+  @doc """
+  Counts parameters in a GPT feed-forward module.
+  """
+  def feed_forward_parameters(feed_forward) do
+    dense_parameters(feed_forward.layers.first, true) +
+      dense_parameters(feed_forward.layers.second, true)
+  end
+
+  @spec layer_norm_parameters(map()) :: non_neg_integer()
+  @doc """
+  Counts parameters in a layer norm module.
+  """
+  def layer_norm_parameters(layer_norm) do
+    tensor_parameters(layer_norm.scale) + tensor_parameters(layer_norm.shift)
+  end
+
+  @spec tensor_parameters(Nx.Tensor.t()) :: non_neg_integer()
+  @doc """
+  Counts scalar values in a tensor.
+  """
+  def tensor_parameters(tensor), do: Nx.size(tensor)
+
   defp transformer_blocks(cfg, _seed, _norm_eps) when cfg.n_layers == 0, do: []
 
   defp transformer_blocks(cfg, seed, norm_eps) do
@@ -131,6 +193,11 @@ defmodule LlmScratch.GPTModel do
   end
 
   defp linear(x, %{kernel: kernel}), do: Nx.dot(x, [-1], kernel, [0])
+
+  defp dense_parameters(%{kernel: kernel, bias: bias}, true),
+    do: tensor_parameters(kernel) + tensor_parameters(bias)
+
+  defp dense_parameters(%{kernel: kernel}, false), do: tensor_parameters(kernel)
 
   defp positional_indices(seq_len), do: Nx.iota({seq_len}, type: {:s, 64})
 
