@@ -28,9 +28,17 @@ defmodule LlmScratch.GPTConfig do
       `LlmScratch.DummyGPTModel`, this controls how many dummy identity blocks
       are created.
 
-    * `:drop_rate` - dropout probability used after adding token and positional
-      embeddings. A value of `0.1` means ten percent of activations are dropped
-      during training mode. Dropout is skipped in inference mode.
+    * `:drop_rate` - backward-compatible default dropout probability. It is
+      used when a more specific dropout field is not set.
+
+    * `:emb_drop_rate` - dropout probability used after adding token and
+      positional embeddings.
+
+    * `:shortcut_drop_rate` - dropout probability used on transformer-block
+      shortcut branches after attention and feed-forward outputs.
+
+    * `:attn_drop_rate` - dropout probability used on attention weights inside
+      multi-head attention.
 
     * `:qkv_bias` - whether query, key, and value projections include bias
       terms in real attention layers. The dummy GPT model keeps this field for
@@ -55,6 +63,9 @@ defmodule LlmScratch.GPTConfig do
     :n_heads,
     :n_layers,
     :drop_rate,
+    :emb_drop_rate,
+    :shortcut_drop_rate,
+    :attn_drop_rate,
     :qkv_bias
   ]
 
@@ -65,8 +76,31 @@ defmodule LlmScratch.GPTConfig do
           n_heads: pos_integer(),
           n_layers: non_neg_integer(),
           drop_rate: float(),
+          emb_drop_rate: float() | nil,
+          shortcut_drop_rate: float() | nil,
+          attn_drop_rate: float() | nil,
           qkv_bias: boolean()
         }
+
+  @spec embedding_dropout(t()) :: float()
+  @doc """
+  Returns the embedding dropout rate, falling back to `drop_rate` when unset.
+  """
+  def embedding_dropout(%__MODULE__{} = cfg), do: dropout_value!(cfg.emb_drop_rate, cfg.drop_rate)
+
+  @spec shortcut_dropout(t()) :: float()
+  @doc """
+  Returns the shortcut dropout rate, falling back to `drop_rate` when unset.
+  """
+  def shortcut_dropout(%__MODULE__{} = cfg),
+    do: dropout_value!(cfg.shortcut_drop_rate, cfg.drop_rate)
+
+  @spec attention_dropout(t()) :: float()
+  @doc """
+  Returns the attention dropout rate, falling back to `drop_rate` when unset.
+  """
+  def attention_dropout(%__MODULE__{} = cfg),
+    do: dropout_value!(cfg.attn_drop_rate, cfg.drop_rate)
 
   @spec estimated_parameter_count(t()) :: non_neg_integer()
   @doc """
@@ -119,4 +153,14 @@ defmodule LlmScratch.GPTConfig do
   end
 
   defp estimated_layer_norm_parameter_count(emb_dim), do: 2 * emb_dim
+
+  defp dropout_value!(nil, fallback), do: validate_dropout!(fallback)
+  defp dropout_value!(value, _fallback), do: validate_dropout!(value)
+
+  defp validate_dropout!(value) when is_number(value) and value >= 0 and value < 1,
+    do: value * 1.0
+
+  defp validate_dropout!(value) do
+    raise ArgumentError, "expected dropout value to be a number in [0, 1), got: #{inspect(value)}"
+  end
 end

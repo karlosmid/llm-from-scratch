@@ -44,6 +44,8 @@ defmodule LlmScratch.TransformerBlock do
 
   `cfg` can be a `%LlmScratch.GPTConfig{}` or a map with atom/string keys:
   `:emb_dim`, `:context_length`, `:n_heads`, `:drop_rate`, and `:qkv_bias`.
+  `:attn_drop_rate` and `:shortcut_drop_rate` may be supplied to control those
+  dropout sites independently; otherwise `:drop_rate` is used for compatibility.
 
   ## Options
 
@@ -63,7 +65,7 @@ defmodule LlmScratch.TransformerBlock do
           params.emb_dim,
           params.emb_dim,
           params.context_length,
-          params.drop_rate,
+          params.attn_drop_rate,
           params.n_heads,
           params.qkv_bias,
           seed: seed
@@ -71,7 +73,7 @@ defmodule LlmScratch.TransformerBlock do
       ff: FeedForward.new(cfg, seed: seed + 1),
       norm1: DummyLayerNorm.new(params.emb_dim, eps: norm_eps),
       norm2: DummyLayerNorm.new(params.emb_dim, eps: norm_eps),
-      drop_shortcut: params.drop_rate
+      drop_shortcut: params.shortcut_drop_rate
     }
   end
 
@@ -150,7 +152,8 @@ defmodule LlmScratch.TransformerBlock do
       emb_dim: validate_positive_integer!(:emb_dim, cfg.emb_dim),
       context_length: validate_positive_integer!(:context_length, cfg.context_length),
       n_heads: validate_positive_integer!(:n_heads, cfg.n_heads),
-      drop_rate: validate_dropout!(cfg.drop_rate),
+      attn_drop_rate: GPTConfig.attention_dropout(cfg),
+      shortcut_drop_rate: GPTConfig.shortcut_dropout(cfg),
       qkv_bias: validate_boolean!(:qkv_bias, cfg.qkv_bias)
     }
   end
@@ -161,21 +164,31 @@ defmodule LlmScratch.TransformerBlock do
       context_length: cfg_value!(cfg, :context_length),
       n_heads: cfg_value!(cfg, :n_heads),
       drop_rate: cfg_value!(cfg, :drop_rate),
+      attn_drop_rate: cfg_value(cfg, :attn_drop_rate),
+      shortcut_drop_rate: cfg_value(cfg, :shortcut_drop_rate),
       qkv_bias: cfg_value!(cfg, :qkv_bias)
     }
     |> then(fn params ->
+      drop_rate = validate_dropout!(:drop_rate, params.drop_rate)
+
       %{
         emb_dim: validate_positive_integer!(:emb_dim, params.emb_dim),
         context_length: validate_positive_integer!(:context_length, params.context_length),
         n_heads: validate_positive_integer!(:n_heads, params.n_heads),
-        drop_rate: validate_dropout!(params.drop_rate),
+        attn_drop_rate: dropout_or_default!(:attn_drop_rate, params.attn_drop_rate, drop_rate),
+        shortcut_drop_rate:
+          dropout_or_default!(:shortcut_drop_rate, params.shortcut_drop_rate, drop_rate),
         qkv_bias: validate_boolean!(:qkv_bias, params.qkv_bias)
       }
     end)
   end
 
-  defp cfg_value!(cfg, key) do
+  defp cfg_value(cfg, key) do
     Map.get(cfg, key, Map.get(cfg, Atom.to_string(key)))
+  end
+
+  defp cfg_value!(cfg, key) do
+    cfg_value(cfg, key)
   end
 
   defp validate_positive_integer!(_field, value) when is_integer(value) and value > 0, do: value
@@ -184,11 +197,14 @@ defmodule LlmScratch.TransformerBlock do
     raise ArgumentError, "expected #{field} to be a positive integer, got: #{inspect(value)}"
   end
 
-  defp validate_dropout!(value) when is_number(value) and value >= 0 and value < 1,
+  defp dropout_or_default!(_field, nil, default), do: default
+  defp dropout_or_default!(field, value, _default), do: validate_dropout!(field, value)
+
+  defp validate_dropout!(_field, value) when is_number(value) and value >= 0 and value < 1,
     do: value * 1.0
 
-  defp validate_dropout!(value) do
-    raise ArgumentError, "expected drop_rate to be a number in [0, 1), got: #{inspect(value)}"
+  defp validate_dropout!(field, value) do
+    raise ArgumentError, "expected #{field} to be a number in [0, 1), got: #{inspect(value)}"
   end
 
   defp validate_boolean!(_field, value) when is_boolean(value), do: value

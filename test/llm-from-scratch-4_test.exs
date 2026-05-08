@@ -10,6 +10,7 @@ defmodule LlmFromScratch4Test do
     GPTModel,
     GPTConfig,
     SimpleGradient,
+    TextGeneration,
     TransformerBlock
   }
 
@@ -282,9 +283,12 @@ defmodule LlmFromScratch4Test do
       )
 
     model = GPTModel.new(gpt_config_124m, seed: 123)
-    total_params = total_parameters(model)
+    total_params = GPTModel.total_parameters(model)
     total_size_mb = total_params * 4 / 1024 / 1024
-    total_params_with_weight_tying = total_params - count_tensor(model.out_head.kernel)
+
+    total_params_with_weight_tying =
+      total_params - GPTModel.tensor_parameters(model.out_head.kernel)
+
     out = GPTModel.forward(model, batch)
 
     assert Nx.equal(
@@ -324,8 +328,8 @@ defmodule LlmFromScratch4Test do
 
     block = TransformerBlock.new(gpt_config_124m, seed: 123)
 
-    feed_forward_params = count_feed_forward(block.ff)
-    attention_params = count_attention(block.att)
+    feed_forward_params = GPTModel.feed_forward_parameters(block.ff)
+    attention_params = GPTModel.attention_parameters(block.att)
 
     assert feed_forward_params == 4_722_432
     assert attention_params == 2_360_064
@@ -348,7 +352,7 @@ defmodule LlmFromScratch4Test do
     assert gpt2_medium_config.n_layers == 24
     assert gpt2_medium_config.n_heads == 16
     assert rem(gpt2_medium_config.emb_dim, gpt2_medium_config.n_heads) == 0
-    assert gpt_parameter_count(gpt2_medium_config) == 406_212_608
+    assert GPTConfig.estimated_parameter_count(gpt2_medium_config) == 406_212_608
   end
 
   test "exercise 4.2 initializes GPT-2 large config and counts parameters" do
@@ -366,7 +370,7 @@ defmodule LlmFromScratch4Test do
     assert gpt2_large_config.n_layers == 36
     assert gpt2_large_config.n_heads == 20
     assert rem(gpt2_large_config.emb_dim, gpt2_large_config.n_heads) == 0
-    assert gpt_parameter_count(gpt2_large_config) == 838_220_800
+    assert GPTConfig.estimated_parameter_count(gpt2_large_config) == 838_220_800
   end
 
   test "exercise 4.2 initializes GPT-2 XL config and counts parameters" do
@@ -384,54 +388,70 @@ defmodule LlmFromScratch4Test do
     assert gpt2_xl_config.n_layers == 48
     assert gpt2_xl_config.n_heads == 25
     assert rem(gpt2_xl_config.emb_dim, gpt2_xl_config.n_heads) == 0
-    assert gpt_parameter_count(gpt2_xl_config) == 1_637_792_000
+    assert GPTConfig.estimated_parameter_count(gpt2_xl_config) == 1_637_792_000
   end
 
-  defp total_parameters(%GPTModel{} = model) do
-    model.tok_emb.weight
-    |> count_tensor()
-    |> Kernel.+(count_tensor(model.pos_emb.weight))
-    |> Kernel.+(Enum.reduce(model.trf_blocks, 0, &(&2 + count_transformer_block(&1))))
-    |> Kernel.+(count_layer_norm(model.final_norm))
-    |> Kernel.+(count_tensor(model.out_head.kernel))
+  test "generate_text_simple generates text from a GPT-124M start context" do
+    previous_backend = Nx.default_backend()
+    Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    gpt_config_124m = %GPTConfig{
+      vocab_size: 50_257,
+      context_length: 1024,
+      emb_dim: 768,
+      n_heads: 12,
+      n_layers: 12,
+      drop_rate: 0.0,
+      qkv_bias: false
+    }
+
+    start_context = "Hello, I am"
+    {:ok, encoded} = Tiktoken.encode("code-davinci-002", start_context)
+    encoded_tensor = Nx.tensor(encoded, type: {:s, 64}) |> Nx.new_axis(0)
+    model = GPTModel.new(gpt_config_124m, seed: 123)
+
+    out =
+      TextGeneration.generate_text_simple(
+        model,
+        encoded_tensor,
+        6,
+        gpt_config_124m.context_length
+      )
+
+    output_tokens = Nx.to_flat_list(out)
+    {:ok, decoded_text} = Tiktoken.decode("code-davinci-002", output_tokens)
+
+    assert encoded == [15496, 11, 314, 716]
+    assert Nx.shape(encoded_tensor) == {1, 4}
+    assert output_tokens == [15496, 11, 314, 716, 8026, 707, 38647, 1336, 10296, 24545]
+    assert Nx.shape(out) == {1, 10}
+    assert length(output_tokens) == 10
+    assert decoded_text == "Hello, I am Stoneaw Eas full gentle Rhode"
   end
 
-  defp count_transformer_block(block) do
-    count_attention(block.att) +
-      count_feed_forward(block.ff) +
-      count_layer_norm(block.norm1) +
-      count_layer_norm(block.norm2)
-  end
+  test "exercise 4.3 supports separate dropout rates for GPT dropout sites" do
+    cfg = %GPTConfig{
+      vocab_size: 32,
+      context_length: 8,
+      emb_dim: 12,
+      n_heads: 3,
+      n_layers: 2,
+      drop_rate: 0.1,
+      emb_drop_rate: 0.2,
+      shortcut_drop_rate: 0.3,
+      attn_drop_rate: 0.4,
+      qkv_bias: false
+    }
 
-  defp count_attention(attention) do
-    attention.w_q
-    |> count_dense(attention.qkv_bias)
-    |> Kernel.+(count_dense(attention.w_k, attention.qkv_bias))
-    |> Kernel.+(count_dense(attention.w_v, attention.qkv_bias))
-    |> Kernel.+(count_dense(attention.out_proj, true))
-  end
+    model = GPTModel.new(cfg, seed: 123)
+    [first_block | _rest] = model.trf_blocks
 
-  defp count_feed_forward(feed_forward) do
-    count_dense(feed_forward.layers.first, true) +
-      count_dense(feed_forward.layers.second, true)
-  end
-
-  defp count_layer_norm(layer_norm) do
-    count_tensor(layer_norm.scale) + count_tensor(layer_norm.shift)
-  end
-
-  defp count_dense(%{kernel: kernel, bias: bias}, true),
-    do: count_tensor(kernel) + count_tensor(bias)
-
-  defp count_dense(%{kernel: kernel}, false), do: count_tensor(kernel)
-
-  defp count_tensor(tensor), do: Nx.size(tensor)
-
-  defp gpt_parameter_count(%GPTConfig{} = cfg) do
-    embedding_params = 2 * cfg.vocab_size * cfg.emb_dim + cfg.context_length * cfg.emb_dim
-    block_params = cfg.n_layers * (12 * cfg.emb_dim * cfg.emb_dim + 10 * cfg.emb_dim)
-    final_norm_params = 2 * cfg.emb_dim
-
-    embedding_params + block_params + final_norm_params
+    assert model.drop_emb == 0.2
+    assert first_block.drop_shortcut == 0.3
+    assert first_block.att.dropout == 0.4
+    assert GPTConfig.embedding_dropout(cfg) == 0.2
+    assert GPTConfig.shortcut_dropout(cfg) == 0.3
+    assert GPTConfig.attention_dropout(cfg) == 0.4
   end
 end

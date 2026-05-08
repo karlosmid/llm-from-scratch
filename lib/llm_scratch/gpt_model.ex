@@ -6,7 +6,7 @@ defmodule LlmScratch.GPTModel do
 
       tok_emb = nn.Embedding(vocab_size, emb_dim)
       pos_emb = nn.Embedding(context_length, emb_dim)
-      drop_emb = nn.Dropout(drop_rate)
+      drop_emb = nn.Dropout(emb_drop_rate)
       trf_blocks = nn.Sequential(*[TransformerBlock(cfg) for _ in range(n_layers)])
       final_norm = LayerNorm(emb_dim)
       out_head = nn.Linear(emb_dim, vocab_size, bias=False)
@@ -57,7 +57,7 @@ defmodule LlmScratch.GPTModel do
       cfg: cfg,
       tok_emb: EmbeddingNative.new(cfg.vocab_size, cfg.emb_dim, seed: seed),
       pos_emb: EmbeddingNative.new(cfg.context_length, cfg.emb_dim, seed: seed + 1),
-      drop_emb: validate_dropout!(cfg.drop_rate),
+      drop_emb: GPTConfig.embedding_dropout(cfg),
       trf_blocks: transformer_blocks(cfg, seed + 2, norm_eps),
       final_norm: DummyLayerNorm.new(cfg.emb_dim, eps: norm_eps),
       out_head: init_out_head(cfg, seed + 2 + cfg.n_layers)
@@ -229,13 +229,6 @@ defmodule LlmScratch.GPTModel do
 
   defp validate_context_length!(seq_len, context_length) do
     raise ArgumentError, "seq_len (#{seq_len}) exceeds context_length (#{context_length})"
-  end
-
-  defp validate_dropout!(value) when is_number(value) and value >= 0 and value < 1,
-    do: value * 1.0
-
-  defp validate_dropout!(value) do
-    raise ArgumentError, "expected drop_rate to be a number in [0, 1), got: #{inspect(value)}"
   end
 
   defp normalize_seed(nil), do: System.unique_integer([:positive])

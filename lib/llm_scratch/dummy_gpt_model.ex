@@ -60,7 +60,8 @@ defmodule LlmScratch.DummyGPTModel do
     * `:pos_emb` - positional embedding table with stored weight shape
       `{context_length, emb_dim}`.
 
-    * `:drop_emb` - dropout rate from `cfg.drop_rate`.
+    * `:drop_emb` - embedding dropout rate from `cfg.emb_drop_rate`, falling
+      back to `cfg.drop_rate`.
 
     * `:trf_blocks` - list of dummy transformer blocks. Its length is
       `cfg.n_layers`. In this dummy model each block returns its input
@@ -83,7 +84,7 @@ defmodule LlmScratch.DummyGPTModel do
       cfg: cfg,
       tok_emb: tok_emb,
       pos_emb: pos_emb,
-      drop_emb: cfg.drop_rate,
+      drop_emb: GPTConfig.embedding_dropout(cfg),
       trf_blocks: for(_ <- 1..cfg.n_layers, do: DummyTransformerBlock.new(cfg)),
       final_norm: DummyLayerNorm.new(cfg.emb_dim),
       out_head: out_head
