@@ -1,0 +1,69 @@
+defmodule LlmScratch.TextUtils do
+  @moduledoc """
+  Token/text conversion helpers for GPT-style token id tensors.
+  """
+
+  @end_of_text "<|endoftext|>"
+
+  @doc """
+  Encodes `text` with `tokenizer` and returns token ids shaped `{1, seq_len}`.
+
+  ## Examples
+
+      iex> token_ids = LlmScratch.TextUtils.text_to_token_ids("Every effort moves you", "code-davinci-002")
+      iex> Nx.shape(token_ids)
+      {1, 4}
+      iex> Nx.to_flat_list(token_ids)
+      [6109, 3626, 6100, 345]
+  """
+  @spec text_to_token_ids(String.t(), String.t()) :: Nx.Tensor.t()
+  def text_to_token_ids(text, tokenizer) when is_binary(text) and is_binary(tokenizer) do
+    {:ok, encoded} = Tiktoken.encode(tokenizer, text, [@end_of_text])
+
+    encoded
+    |> Nx.tensor(type: {:s, 64})
+    |> Nx.new_axis(0)
+  end
+
+  @doc """
+  Encodes a list of texts with `tokenizer` and returns token ids shaped `{batch_size, seq_len}`.
+
+  All texts must encode to the same number of tokens so they can be stacked into
+  one dense tensor.
+
+  ## Examples
+
+      iex> batch = LlmScratch.TextUtils.texts_to_token_ids(["every effort moves", "I really like"], "code-davinci-002")
+      iex> Nx.shape(batch)
+      {2, 3}
+      iex> Nx.to_list(batch)
+      [[16833, 3626, 6100], [40, 1107, 588]]
+  """
+  @spec texts_to_token_ids([String.t()], String.t()) :: Nx.Tensor.t()
+  def texts_to_token_ids(texts, tokenizer) when is_list(texts) and is_binary(tokenizer) do
+    texts
+    |> Enum.map(&text_to_token_ids(&1, tokenizer))
+    |> Enum.map(&Nx.squeeze(&1, axes: [0]))
+    |> Nx.stack()
+  end
+
+  @doc """
+  Decodes token ids shaped `{1, seq_len}` back to text with `tokenizer`.
+
+  ## Examples
+
+      iex> token_ids = Nx.tensor([[6109, 3626, 6100, 345]], type: {:s, 64})
+      iex> LlmScratch.TextUtils.token_ids_to_text(token_ids, "code-davinci-002")
+      "Every effort moves you"
+  """
+  @spec token_ids_to_text(Nx.Tensor.t(), String.t()) :: String.t()
+  def token_ids_to_text(%Nx.Tensor{} = token_ids, tokenizer) when is_binary(tokenizer) do
+    flat =
+      token_ids
+      |> Nx.squeeze(axes: [0])
+      |> Nx.to_flat_list()
+
+    {:ok, text} = Tiktoken.decode(tokenizer, flat)
+    text
+  end
+end
