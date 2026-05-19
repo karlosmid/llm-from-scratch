@@ -21,12 +21,13 @@ defmodule LlmScratch.LossUtils do
   def target_token_probas(%Nx.Tensor{} = probas, %Nx.Tensor{} = targets) do
     vocab_size = elem(Nx.shape(probas), 2)
 
-    #{2, 3, 50257} => {6, 50257}
+    # {2, 3, 50257} => {6, 50257}
     probas
     |> Nx.reshape({:auto, vocab_size})
     |> Nx.take_along_axis(
-      #{2, 3} => {6, 1}
-      Nx.reshape(targets, {:auto, 1}), axis: 1
+      # {2, 3} => {6, 1}
+      Nx.reshape(targets, {:auto, 1}),
+      axis: 1
     )
     |> Nx.squeeze(axes: [1])
   end
@@ -53,11 +54,126 @@ defmodule LlmScratch.LossUtils do
   """
   @spec cross_entropy_loss(Nx.Tensor.t(), Nx.Tensor.t()) :: Nx.Tensor.t()
   def cross_entropy_loss(%Nx.Tensor{} = logits, %Nx.Tensor{} = targets) do
-    logits #step1
-    |> Axon.Activations.softmax(axis: -1) #step2
-    |> target_token_probas(targets) #step3
-    |> Nx.log() #step4
-    |> Nx.negate() #step6
-    |> Nx.mean() #step5
+    # step1
+    logits
+    # step2
+    |> Axon.Activations.softmax(axis: -1)
+    # step3
+    |> target_token_probas(targets)
+    # step4
+    |> Nx.log()
+    # step6
+    |> Nx.negate()
+    # step5
+    |> Nx.mean()
+  end
+
+  @doc """
+  Calculates cross entropy loss for an input/target batch and model.
+
+  This is the Nx counterpart to:
+
+      logits = model(input_batch)
+      loss = torch.nn.functional.cross_entropy(
+        logits.flatten(0, 1),
+        target_batch.flatten()
+      )
+
+  `input_batch` and `target_batch` should be shaped `{batch_size, seq_len}`.
+  The model must be a struct whose module exports `forward/2` or `forward/3`.
+
+  The optional `device` argument accepts an Nx backend, such as `EXLA.Backend`
+  or `{EXLA.Backend, client: :cuda}`. Use `nil` or `:default` to leave tensors
+  on their current backend.
+  """
+  @spec calc_loss_batch(Nx.Tensor.t(), Nx.Tensor.t(), struct(), nil | :default | atom() | tuple()) ::
+          Nx.Tensor.t()
+  def calc_loss_batch(
+        %Nx.Tensor{} = input_batch,
+        %Nx.Tensor{} = target_batch,
+        model,
+        device \\ :default
+      )
+      when is_struct(model) do
+    input_batch = maybe_transfer(input_batch, device)
+    target_batch = maybe_transfer(target_batch, device)
+
+    model
+    |> forward_model(input_batch)
+    |> cross_entropy_loss(target_batch)
+  end
+
+  @doc """
+  Calculates average loss over batches from a data loader.
+
+  `data_loader` should be a `%{stream: stream, length: length}` map, such as the
+  value returned by `LlmScratch.DataLoader.new/2`. Each batch may be either:
+
+    * `{input_batch, target_batch}` with already-stacked tensors
+    * a list of `{input_tensor, target_tensor}` examples
+
+  Pass `nil` for `num_batches` to evaluate one full pass through the loader.
+  Returns `:nan` when the loader has no batches.
+  """
+  @spec calc_loss_loader(
+          map(),
+          struct(),
+          nil | :default | atom() | tuple(),
+          nil | non_neg_integer()
+        ) ::
+          float()
+  def calc_loss_loader(data_loader, model, device \\ :default, num_batches \\ nil)
+      when is_map(data_loader) and is_struct(model) do
+    loader_length = Map.get(data_loader, :length, 0)
+
+    cond do
+      loader_length == 0 ->
+        :nan
+
+      true ->
+        num_batches = normalize_num_batches(num_batches, loader_length)
+
+        data_loader.stream
+        |> Stream.take(num_batches)
+        |> Enum.reduce(0.0, fn batch, total_loss ->
+          {input_batch, target_batch} = stack_batch(batch)
+          loss = calc_loss_batch(input_batch, target_batch, model, device)
+
+          total_loss + Nx.to_number(loss)
+        end)
+        |> Kernel./(num_batches)
+    end
+  end
+
+  defp maybe_transfer(tensor, device) when device in [nil, :default], do: tensor
+  defp maybe_transfer(tensor, device), do: Nx.backend_transfer(tensor, device)
+
+  defp normalize_num_batches(nil, loader_length), do: loader_length
+  defp normalize_num_batches(num_batches, loader_length), do: min(num_batches, loader_length)
+
+  defp stack_batch({%Nx.Tensor{} = input_batch, %Nx.Tensor{} = target_batch}) do
+    {input_batch, target_batch}
+  end
+
+  defp stack_batch(batch) when is_list(batch) do
+    {inputs, targets} = Enum.unzip(batch)
+
+    {Nx.stack(inputs), Nx.stack(targets)}
+  end
+
+  defp forward_model(model, input_batch) do
+    module = model.__struct__
+
+    cond do
+      function_exported?(module, :forward, 2) ->
+        apply(module, :forward, [model, input_batch])
+
+      function_exported?(module, :forward, 3) ->
+        apply(module, :forward, [model, input_batch, []])
+
+      true ->
+        raise ArgumentError,
+              "expected #{inspect(module)} to export forward/2 or forward/3"
+    end
   end
 end
