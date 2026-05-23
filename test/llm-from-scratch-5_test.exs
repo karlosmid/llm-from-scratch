@@ -1,7 +1,7 @@
 defmodule LlmFromScratch5Test do
   use ExUnit.Case
 
-  alias LlmScratch.{GPTConfig, GPTModel, LossUtils, TextGeneration, TextUtils}
+  alias LlmScratch.{GPTConfig, GPTModel, GptDatasetV1, LossUtils, TextGeneration, TextUtils}
 
   test "5.1.1 generate_text_simple generates text from a GPT-124M start context" do
     # set EXLA for faster computing
@@ -97,14 +97,14 @@ defmodule LlmFromScratch5Test do
     assert TextUtils.token_ids_to_text(targets[0] |> Nx.new_axis(0), "code-davinci-002") ==
              " effort moves you"
 
-    #what model actually predicted
+    # what model actually predicted
     assert TextUtils.token_ids_to_text(
              token_ids[0] |> Nx.flatten() |> Nx.new_axis(0),
              "code-davinci-002"
            ) ==
              " Clarksonerved hospital"
 
-    #probabilities that model generated for targets
+    # probabilities that model generated for targets
     target_probas = LossUtils.target_token_probas(probas, targets)
 
     assert_close(
@@ -120,12 +120,100 @@ defmodule LlmFromScratch5Test do
       atol: 1.0e-10
     )
 
-    #we calculate loss as difference what model actually predicted for target tokens
-    #this loss should be minimized
-    #we have big loss result, and that is expected as we did not train the model
-    #goal is to have loss close to zero
+    # we calculate loss as difference what model actually predicted for target tokens
+    # this loss should be minimized
+    # we have big loss result, and that is expected as we did not train the model
+    # goal is to have loss close to zero
     loss = LossUtils.cross_entropy_loss(logits, targets)
     assert_close(loss, Nx.tensor(10.824145), atol: 1.0e-6)
+  end
+
+  test "5.1.3 Calculating the training and validation set losses" do
+    previous_backend = Nx.default_backend()
+    device = Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    file_content = File.read!("the-verdict.txt")
+    {:ok, encoded_tokens} = Tiktoken.encode("code-davinci-002", file_content)
+
+    assert String.length(file_content) == 20_479
+    assert length(encoded_tokens) == 5_145
+
+    train_ratio = 0.90
+    split_idx = trunc(train_ratio * String.length(file_content))
+    train_data = String.slice(file_content, 0, split_idx)
+    val_data = String.slice(file_content, split_idx, String.length(file_content) - split_idx)
+
+    {:ok, train_tokens} = Tiktoken.encode("code-davinci-002", train_data, ["<|endoftext|>"])
+    {:ok, val_tokens} = Tiktoken.encode("code-davinci-002", val_data, ["<|endoftext|>"])
+
+    assert String.length(train_data) == 18_431
+    assert String.length(val_data) == 2_048
+    assert length(train_tokens) == 4_612
+    assert length(val_tokens) == 534
+
+    gpt_config_124m = %GPTConfig{
+      vocab_size: 50_257,
+      context_length: 256,
+      emb_dim: 768,
+      n_heads: 12,
+      n_layers: 12,
+      drop_rate: 0.0,
+      qkv_bias: false
+    }
+
+    train_loader =
+      GptDatasetV1.create_dataloader_v1(
+        raw_text: train_data,
+        batch_size: 2,
+        max_length: gpt_config_124m.context_length,
+        stride: gpt_config_124m.context_length,
+        drop_last: true,
+        shuffle: true,
+        num_workers: 0
+      )
+
+    val_loader =
+      GptDatasetV1.create_dataloader_v1(
+        raw_text: val_data,
+        batch_size: 2,
+        max_length: gpt_config_124m.context_length,
+        stride: gpt_config_124m.context_length,
+        drop_last: false,
+        shuffle: false,
+        num_workers: 0
+      )
+
+    assert %{batch_size: 2, drop_last: true, num_workers: 0, length: 9} = train_loader
+    assert %{batch_size: 2, drop_last: false, num_workers: 0, length: 1} = val_loader
+
+    train_batches = Enum.take(train_loader.stream, train_loader.length)
+    val_batches = Enum.take(val_loader.stream, val_loader.length)
+
+    assert length(train_batches) == 9
+    assert length(val_batches) == 1
+
+    Enum.each(train_batches, fn batch ->
+      {inputs, targets} = Enum.unzip(batch)
+
+      assert Nx.shape(Nx.stack(inputs)) == {2, 256}
+      assert Nx.shape(Nx.stack(targets)) == {2, 256}
+    end)
+
+    Enum.each(val_batches, fn batch ->
+      {inputs, targets} = Enum.unzip(batch)
+
+      assert Nx.shape(Nx.stack(inputs)) == {2, 256}
+      assert Nx.shape(Nx.stack(targets)) == {2, 256}
+    end)
+
+    model = GPTModel.new(gpt_config_124m, seed: 123)
+
+    train_loss = LossUtils.calc_loss_loader(train_loader, model, device)
+    val_loss = LossUtils.calc_loss_loader(val_loader, model, device)
+
+    assert_in_delta train_loss, 10.847595, 1.0e-5
+    assert_in_delta val_loss, 10.849722, 1.0e-5
   end
 
   defp assert_close(actual, expected, opts) do
