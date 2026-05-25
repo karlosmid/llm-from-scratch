@@ -9,6 +9,8 @@ defmodule LlmScratch.SelfAttentionV2 do
     * `forward/2` - compute full context vectors for all tokens
   """
 
+  import Nx.Defn
+
   defstruct [:w_q, :w_k, :w_v, :d_in, :d_out, :seed, :qkv_bias]
 
   @type dense_weights :: %{kernel: Nx.Tensor.t(), bias: Nx.Tensor.t()}
@@ -61,8 +63,8 @@ defmodule LlmScratch.SelfAttentionV2 do
     qkv_bias = normalize_qkv_bias(Keyword.get(opts, :qkv_bias, true))
 
     w_q = init_dense_weights(d_in, d_out, seed, qkv_bias, "q_proj")
-    w_k = init_dense_weights(d_in, d_out, seed, qkv_bias, "k_proj")
-    w_v = init_dense_weights(d_in, d_out, seed, qkv_bias, "v_proj")
+    w_k = init_dense_weights(d_in, d_out, seed + 1, qkv_bias, "k_proj")
+    w_v = init_dense_weights(d_in, d_out, seed + 2, qkv_bias, "v_proj")
 
     %__MODULE__{
       w_q: w_q,
@@ -112,56 +114,22 @@ defmodule LlmScratch.SelfAttentionV2 do
     * `layer_name` - Axon layer name used for parameter extraction.
   """
   def init_dense_weights(d_in, d_out, seed, qkv_bias, layer_name) do
-    model =
-      Axon.input("input", shape: {nil, d_in})
-      |> Axon.dense(d_out, use_bias: qkv_bias, name: layer_name)
+    _layer_name = layer_name
+    bound = :math.sqrt(1.0 / d_in)
+    key = LlmScratch.Random.manual_seed(seed)
 
-    {init_fn, _predict_fn} = Axon.build(model, seed: seed)
-    params = init_fn.(Nx.template({1, d_in}, {:f, 32}), Axon.ModelState.empty())
-    extract_dense_weights!(params, layer_name)
-  end
+    {kernel, key} = Nx.Random.uniform(key, -bound, bound, shape: {d_in, d_out}, type: {:f, 32})
 
-  defp extract_dense_weights!(%Axon.ModelState{} = params, layer_name) do
-    params
-    |> Axon.ModelState.trainable_parameters()
-    |> extract_dense_weights!(layer_name)
-  end
+    bias =
+      if qkv_bias do
+        {bias, _key} = Nx.Random.uniform(key, -bound, bound, shape: {d_out}, type: {:f, 32})
 
-  defp extract_dense_weights!(params, layer_name) when is_map(params) do
-    layer_params =
-      Map.get(params, layer_name) ||
-        Enum.find_value(Map.values(params), fn
-          layer when is_map(layer) ->
-            kernel = Map.get(layer, "kernel") || Map.get(layer, :kernel)
-            bias = Map.get(layer, "bias") || Map.get(layer, :bias)
+        bias
+      else
+        Nx.broadcast(0.0, {d_out}) |> Nx.as_type({:f, 32})
+      end
 
-            if match?(%Nx.Tensor{}, kernel) and (is_nil(bias) or match?(%Nx.Tensor{}, bias)) do
-              layer
-            else
-              nil
-            end
-
-          _ ->
-            nil
-        end)
-
-    kernel = layer_params && (Map.get(layer_params, "kernel") || Map.get(layer_params, :kernel))
-    bias = layer_params && (Map.get(layer_params, "bias") || Map.get(layer_params, :bias))
-
-    if match?(%Nx.Tensor{}, kernel) do
-      kernel = Nx.as_type(kernel, {:f, 32})
-
-      bias =
-        case bias do
-          %Nx.Tensor{} = bias -> Nx.as_type(bias, {:f, 32})
-          nil -> zero_bias_from_kernel(kernel)
-        end
-
-      %{kernel: kernel, bias: bias}
-    else
-      raise ArgumentError,
-            "could not extract dense kernel/bias params for layer #{inspect(layer_name)}"
-    end
+    %{kernel: Nx.as_type(kernel, {:f, 32}), bias: Nx.as_type(bias, {:f, 32})}
   end
 
   @doc """
@@ -183,12 +151,14 @@ defmodule LlmScratch.SelfAttentionV2 do
           Nx.Tensor.t()
 
   def dense_project(inputs, %{kernel: kernel, bias: bias}) do
-    Nx.add(Nx.dot(inputs, kernel), bias)
+    dense_project_defn(inputs, %{kernel: kernel, bias: bias})
   end
 
-  defp zero_bias_from_kernel(kernel) do
-    {_, d_out} = Nx.shape(kernel)
-    Nx.broadcast(0.0, {d_out}) |> Nx.as_type({:f, 32})
+  @doc """
+  Defn-compatible dense projection over the last axis.
+  """
+  defn dense_project_defn(inputs, %{kernel: kernel, bias: bias}) do
+    Nx.add(Nx.dot(inputs, [-1], kernel, [0]), bias)
   end
 
   defp normalize_seed(nil), do: System.unique_integer([:positive])

@@ -3,6 +3,8 @@ defmodule LlmScratch.LossUtils do
   Loss helpers for GPT-style logits and target token tensors.
   """
 
+  import Nx.Defn
+
   @doc """
   Returns the predicted probabilities for the expected target token ids.
 
@@ -54,17 +56,28 @@ defmodule LlmScratch.LossUtils do
   """
   @spec cross_entropy_loss(Nx.Tensor.t(), Nx.Tensor.t()) :: Nx.Tensor.t()
   def cross_entropy_loss(%Nx.Tensor{} = logits, %Nx.Tensor{} = targets) do
-    # step1
+    cross_entropy_loss_defn(logits, targets)
+  end
+
+  @doc """
+  Defn-compatible mean cross entropy loss from logits and target token ids.
+  """
+  defn cross_entropy_loss_defn(logits, targets) do
+    vocab_size = Nx.axis_size(logits, 2)
+
+    # step1: logits
     logits
-    # step2
+    # step2: probabilities
     |> Axon.Activations.softmax(axis: -1)
-    # step3
-    |> target_token_probas(targets)
-    # step4
+    # step3: target probabilities
+    |> Nx.reshape({:auto, vocab_size})
+    |> Nx.take_along_axis(Nx.reshape(targets, {:auto, 1}), axis: 1)
+    |> Nx.squeeze(axes: [1])
+    # step4: logarithmic probabilities
     |> Nx.log()
-    # step6
+    # step6: negative average log probabilities
     |> Nx.negate()
-    # step5
+    # step5: average logarithmic probabilities
     |> Nx.mean()
   end
 

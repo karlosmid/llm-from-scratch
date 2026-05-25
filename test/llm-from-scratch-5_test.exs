@@ -1,7 +1,15 @@
 defmodule LlmFromScratch5Test do
   use ExUnit.Case
 
-  alias LlmScratch.{GPTConfig, GPTModel, GptDatasetV1, LossUtils, TextGeneration, TextUtils}
+  alias LlmScratch.{
+    GPTConfig,
+    GPTModel,
+    GptDatasetV1,
+    LossUtils,
+    TextGeneration,
+    TextUtils,
+    Training
+  }
 
   test "5.1.1 generate_text_simple generates text from a GPT-124M start context" do
     # set EXLA for faster computing
@@ -39,10 +47,23 @@ defmodule LlmFromScratch5Test do
 
     assert Nx.to_flat_list(encoded_tensor) == [6109, 3626, 6100, 345]
     assert Nx.shape(encoded_tensor) == {1, 4}
-    assert output_tokens == [6109, 3626, 6100, 345, 16244, 42570, 46784, 9329, 30840, 27005]
+
+    assert output_tokens == [
+             6109,
+             3626,
+             6100,
+             345,
+             49_770,
+             30_538,
+             17_021,
+             41_246,
+             47_931,
+             14_609
+           ]
+
     assert Nx.shape(out) == {1, 10}
     assert length(output_tokens) == 10
-    assert decoded_text == "Every effort moves youdevelopclimategra Lind Healthy Dread"
+    assert decoded_text == "Every effort moves youTea labelled proves insensitive Niño Zombie"
   end
 
   test "5.1.2 calculating the text generation loss" do
@@ -89,8 +110,8 @@ defmodule LlmFromScratch5Test do
     assert Nx.shape(targets) == {2, 3}
 
     assert Nx.to_list(token_ids) == [
-             [[40_524], [8520], [4436]],
-             [[22_666], [2829], [5387]]
+             [[19_107], [28_919], [47_017]],
+             [[24_695], [16_007], [16_023]]
            ]
 
     # targets what model should predict
@@ -102,7 +123,7 @@ defmodule LlmFromScratch5Test do
              token_ids[0] |> Nx.flatten() |> Nx.new_axis(0),
              "code-davinci-002"
            ) ==
-             " Clarksonerved hospital"
+             "identifiedreements Buffer"
 
     # probabilities that model generated for targets
     target_probas = LossUtils.target_token_probas(probas, targets)
@@ -110,12 +131,12 @@ defmodule LlmFromScratch5Test do
     assert_close(
       target_probas,
       Nx.tensor([
-        2.2307187e-5,
-        2.2980759e-5,
-        2.1722459e-5,
-        2.1338150e-5,
-        1.7680910e-5,
-        1.4839508e-5
+        5.6883127e-5,
+        3.5589568e-5,
+        2.4848670e-5,
+        4.5891375e-5,
+        2.5597232e-5,
+        1.9225208e-5
       ]),
       atol: 1.0e-10
     )
@@ -125,7 +146,7 @@ defmodule LlmFromScratch5Test do
     # we have big loss result, and that is expected as we did not train the model
     # goal is to have loss close to zero
     loss = LossUtils.cross_entropy_loss(logits, targets)
-    assert_close(loss, Nx.tensor(10.824145), atol: 1.0e-6)
+    assert_close(loss, Nx.tensor(10.340371), atol: 1.0e-6)
   end
 
   test "5.1.3 Calculating the training and validation set losses" do
@@ -212,8 +233,105 @@ defmodule LlmFromScratch5Test do
     train_loss = LossUtils.calc_loss_loader(train_loader, model, device)
     val_loss = LossUtils.calc_loss_loader(val_loader, model, device)
 
-    assert_in_delta train_loss, 10.847595, 1.0e-5
-    assert_in_delta val_loss, 10.849722, 1.0e-5
+    assert_in_delta train_loss, 11.028817, 1.0e-5
+    assert_in_delta val_loss, 10.995487, 1.0e-5
+  end
+
+  @tag :train
+  @tag timeout: 720_000
+  test "5.2 train an llm" do
+    previous_backend = Nx.default_backend()
+    device = Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    file_content = File.read!("the-verdict.txt")
+    train_ratio = 0.90
+    split_idx = trunc(train_ratio * String.length(file_content))
+    train_data = String.slice(file_content, 0, split_idx)
+    val_data = String.slice(file_content, split_idx, String.length(file_content) - split_idx)
+
+    gpt_config_124m = %GPTConfig{
+      vocab_size: 50_257,
+      context_length: 256,
+      emb_dim: 768,
+      n_heads: 12,
+      n_layers: 12,
+      drop_rate: 0.0,
+      qkv_bias: false
+    }
+
+    train_loader =
+      GptDatasetV1.create_dataloader_v1(
+        raw_text: train_data,
+        batch_size: 2,
+        max_length: gpt_config_124m.context_length,
+        stride: gpt_config_124m.context_length,
+        drop_last: true,
+        shuffle: true,
+        num_workers: 0
+      )
+
+    val_loader =
+      GptDatasetV1.create_dataloader_v1(
+        raw_text: val_data,
+        batch_size: 2,
+        max_length: gpt_config_124m.context_length,
+        stride: gpt_config_124m.context_length,
+        drop_last: false,
+        shuffle: false,
+        num_workers: 0
+      )
+
+    model = GPTModel.new(gpt_config_124m, seed: 123)
+
+    optimizer =
+      Training.adamw(
+        0.0004,
+        weight_decay: 0.1
+      )
+
+    {trained_model, train_losses, val_losses, tokens_seen} =
+      Training.train_model_simple(
+        model,
+        train_loader,
+        val_loader,
+        optimizer,
+        device,
+        10,
+        5,
+        5,
+        "Every effort moves you",
+        "code-davinci-002"
+      )
+
+    assert length(train_losses) == 18
+    assert length(val_losses) == 18
+
+    assert tokens_seen == [
+             512,
+             3072,
+             5632,
+             8192,
+             10_752,
+             13_312,
+             15_872,
+             18_432,
+             20_992,
+             23_552,
+             26_112,
+             28_672,
+             31_232,
+             33_792,
+             36_352,
+             38_912,
+             41_472,
+             44_032
+           ]
+
+    assert Enum.all?(train_losses, &is_float/1)
+    assert Enum.all?(val_losses, &is_float/1)
+    assert Enum.all?(train_losses ++ val_losses, &(&1 > 0.0))
+    assert %GPTModel{} = trained_model
   end
 
   defp assert_close(actual, expected, opts) do

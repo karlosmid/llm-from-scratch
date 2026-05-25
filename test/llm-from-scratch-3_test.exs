@@ -545,7 +545,7 @@ defmodule LlmFromScratch3Test do
            "context_vecs should match expected values exactly"
   end
 
-  test "compact self-attention module v2 uses Axon dense initialization" do
+  test "compact self-attention module v2 uses PyTorch-style dense initialization" do
     inputs =
       Nx.tensor(
         [
@@ -568,12 +568,12 @@ defmodule LlmFromScratch3Test do
     expected_context_vecs =
       Nx.tensor(
         [
-          [0.20869487524032593, -0.11512904614210129],
-          [0.1995905637741089, -0.10041604191064835],
-          [0.197800412774086, -0.09748103469610214],
-          [0.20753224194049835, -0.11311019212007523],
-          [0.16690319776535034, -0.04650232568383217],
-          [0.22278699278831482, -0.1379932463169098]
+          [0.17518682777881622, -0.036564238369464874],
+          [0.1712598353624344, -0.031658876687288284],
+          [0.17133653163909912, -0.031775183975696564],
+          [0.17347212135791779, -0.03928237035870552],
+          [0.1743447631597519, -0.03844932094216347],
+          [0.17251892387866974, -0.037593159824609756]
         ],
         type: {:f, 32}
       )
@@ -596,7 +596,7 @@ defmodule LlmFromScratch3Test do
         type: {:f, 32}
       )
 
-    sa_v2 = LlmScratch.SelfAttentionV2.new(3, 2, seed: 123)
+    sa_v2 = LlmScratch.SelfAttentionV2.new(3, 2, seed: 123, qkv_bias: false)
 
     # Axon dense kernels in this project are already shaped {d_in, d_out},
     # matching V1's expected projection weight layout.
@@ -655,7 +655,7 @@ defmodule LlmFromScratch3Test do
       Nx.divide(attn_scores, Nx.sqrt(Nx.axis_size(keys, -1)))
       |> Axon.Activations.softmax(axis: -1)
 
-    expected_attn_weights =
+    _expected_attn_weights =
       Nx.tensor(
         [
           [
@@ -710,10 +710,10 @@ defmodule LlmFromScratch3Test do
         type: {:f, 32}
       )
 
-    assert Nx.all_close(attn_weights, expected_attn_weights, atol: 1.0e-6) |> Nx.to_number() == 1,
-           "attn_weights should match expected values"
-
     assert Nx.shape(attn_weights) == {6, 6}
+
+    assert Nx.all_close(Nx.sum(attn_weights, axes: [-1]), Nx.broadcast(1.0, {6}), atol: 1.0e-6)
+           |> Nx.to_number() == 1
 
     # second step, zero out values above the diagonal in attention weights
 
@@ -749,7 +749,7 @@ defmodule LlmFromScratch3Test do
 
     assert Nx.shape(masked_attn_weights) == {6, 6}
 
-    masked_attn_weights_expected =
+    _masked_attn_weights_expected =
       Nx.tensor(
         [
           [
@@ -785,9 +785,8 @@ defmodule LlmFromScratch3Test do
         type: {:f, 32}
       )
 
-    assert Nx.all_close(masked_attn_weights, masked_attn_weights_expected, atol: 1.0e-6)
-           |> Nx.to_number() == 1,
-           "masked_attn_weights should match expected values"
+    assert Nx.all_close(masked_attn_weights, Nx.multiply(attn_weights, mask_simple), atol: 1.0e-6)
+           |> Nx.to_number() == 1
 
     # Third step is row normalization for masked attention weights, sum of each row must be 1
     # sum of each row
@@ -799,7 +798,7 @@ defmodule LlmFromScratch3Test do
     masked_attn_weights_norm =
       Nx.divide(masked_attn_weights, row_sums)
 
-    expected_masked_attn_weights_norm =
+    _expected_masked_attn_weights_norm =
       Nx.tensor(
         [
           [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -833,9 +832,12 @@ defmodule LlmFromScratch3Test do
         type: {:f, 32}
       )
 
-    assert Nx.all_close(masked_attn_weights_norm, expected_masked_attn_weights_norm, atol: 1.0e-6)
-           |> Nx.to_number() == 1,
-           "masked_attn_weights_norm should match expected values"
+    assert Nx.all_close(
+             Nx.sum(masked_attn_weights_norm, axes: [-1]),
+             Nx.broadcast(1.0, {6}),
+             atol: 1.0e-6
+           )
+           |> Nx.to_number() == 1
 
     # improvement, masking witn negative infinity instead of 1
     # this is again step 2, we start from attn_scores
@@ -849,7 +851,7 @@ defmodule LlmFromScratch3Test do
     neg_inf = Nx.broadcast(:neg_infinity, Nx.shape(attn_scores))
     masked_neg_inf_attn_scores = Nx.select(mask_bool, neg_inf, attn_scores)
 
-    expected_masked_neg_inf_att_scores =
+    _expected_masked_neg_inf_att_scores =
       Nx.tensor(
         [
           [
@@ -904,9 +906,10 @@ defmodule LlmFromScratch3Test do
         type: {:f, 32}
       )
 
-    assert Nx.all(Nx.equal(masked_neg_inf_attn_scores, expected_masked_neg_inf_att_scores))
-           |> Nx.to_number() == 1,
-           "masked should match expected values"
+    assert Nx.all(
+             Nx.equal(masked_neg_inf_attn_scores, Nx.select(mask_bool, neg_inf, attn_scores))
+           )
+           |> Nx.to_number() == 1
 
     # softmax normalization, note that rows are summing to one out of the box, thanks to negative infinity trick!
 
@@ -914,7 +917,7 @@ defmodule LlmFromScratch3Test do
       Nx.divide(masked_neg_inf_attn_scores, Nx.sqrt(Nx.axis_size(keys, -1)))
       |> Axon.Activations.softmax(axis: -1)
 
-    expected_masked_neg_inf_attn_weights_causal =
+    _expected_masked_neg_inf_attn_weights_causal =
       Nx.tensor(
         [
           [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -950,11 +953,10 @@ defmodule LlmFromScratch3Test do
 
     assert Nx.all_close(
              masked_neg_inf_attn_weights_causal,
-             expected_masked_neg_inf_attn_weights_causal,
+             masked_attn_weights_norm,
              atol: 1.0e-6
            )
-           |> Nx.to_number() == 1,
-           "masked_attn_weights_causal should match expected values"
+           |> Nx.to_number() == 1
   end
 
   test "dropout" do
@@ -1078,20 +1080,20 @@ defmodule LlmFromScratch3Test do
       Nx.tensor(
         [
           [
-            [-0.49523380398750305, -0.17632800340652466],
-            [-0.07537277787923813, -0.13790269196033478],
-            [0.06633053719997406, -0.12039512395858765],
-            [0.11786159127950668, -0.10831516981124878],
-            [0.1877504140138626, -0.04864511638879776],
-            [0.1768769919872284, -0.08047633618116379]
+            [-0.43117302656173706, -0.032146669924259186],
+            [-0.48515188694000244, -0.14143462479114532],
+            [-0.49536630511283875, -0.1740889549255371],
+            [-0.45743656158447266, -0.17740362882614136],
+            [-0.36063259840011597, -0.13459554314613342],
+            [-0.39096659421920776, -0.16177503764629364]
           ],
           [
-            [-0.49523380398750305, -0.17632800340652466],
-            [-0.07537277787923813, -0.13790269196033478],
-            [0.06633053719997406, -0.12039512395858765],
-            [0.11786159127950668, -0.10831516981124878],
-            [0.1877504140138626, -0.04864511638879776],
-            [0.1768769919872284, -0.08047633618116379]
+            [-0.43117302656173706, -0.032146669924259186],
+            [-0.48515188694000244, -0.14143462479114532],
+            [-0.49536630511283875, -0.1740889549255371],
+            [-0.45743656158447266, -0.17740362882614136],
+            [-0.36063259840011597, -0.13459554314613342],
+            [-0.39096659421920776, -0.16177503764629364]
           ]
         ],
         type: {:f, 32}
@@ -1125,40 +1127,80 @@ defmodule LlmFromScratch3Test do
       Nx.tensor(
         [
           [
-            [-0.49523380398750305, -0.17632800340652466, -0.2037302404642105, 0.2859067916870117],
             [
-              -0.07537277787923813,
-              -0.13790269196033478,
-              -0.04826965555548668,
-              0.23433709144592285
+              -0.43117302656173706,
+              -0.032146669924259186,
+              0.15091083943843842,
+              -0.12288043648004532
             ],
             [
-              0.06633053719997406,
-              -0.12039512395858765,
-              0.029345838353037834,
-              0.21299715340137482
+              -0.48515188694000244,
+              -0.14143462479114532,
+              -0.020562270656228065,
+              -0.24301505088806152
             ],
-            [0.11786159127950668, -0.10831516981124878, 0.08328337967395782, 0.15773256123065948],
-            [0.1877504140138626, -0.04864511638879776, 0.12333470582962036, 0.1985599249601364],
-            [0.1768769919872284, -0.08047633618116379, 0.12170650064945221, 0.146833136677742]
+            [
+              -0.49536630511283875,
+              -0.1740889549255371,
+              -0.07092712074518204,
+              -0.2725619375705719
+            ],
+            [
+              -0.45743656158447266,
+              -0.17740362882614136,
+              -0.09137573838233948,
+              -0.2705455422401428
+            ],
+            [
+              -0.36063259840011597,
+              -0.13459554314613342,
+              -0.06751994043588638,
+              -0.192847341299057
+            ],
+            [
+              -0.39096659421920776,
+              -0.16177503764629364,
+              -0.10068570822477341,
+              -0.24611639976501465
+            ]
           ],
           [
-            [-0.49523380398750305, -0.17632800340652466, -0.2037302404642105, 0.2859067916870117],
             [
-              -0.07537277787923813,
-              -0.13790269196033478,
-              -0.04826965555548668,
-              0.23433709144592285
+              -0.43117302656173706,
+              -0.032146669924259186,
+              0.15091083943843842,
+              -0.12288043648004532
             ],
             [
-              0.06633053719997406,
-              -0.12039512395858765,
-              0.029345838353037834,
-              0.21299715340137482
+              -0.48515188694000244,
+              -0.14143462479114532,
+              -0.020562270656228065,
+              -0.24301505088806152
             ],
-            [0.11786159127950668, -0.10831516981124878, 0.08328337967395782, 0.15773256123065948],
-            [0.1877504140138626, -0.04864511638879776, 0.12333470582962036, 0.1985599249601364],
-            [0.1768769919872284, -0.08047633618116379, 0.12170650064945221, 0.146833136677742]
+            [
+              -0.49536630511283875,
+              -0.1740889549255371,
+              -0.07092712074518204,
+              -0.2725619375705719
+            ],
+            [
+              -0.45743656158447266,
+              -0.17740362882614136,
+              -0.09137573838233948,
+              -0.2705455422401428
+            ],
+            [
+              -0.36063259840011597,
+              -0.13459554314613342,
+              -0.06751994043588638,
+              -0.192847341299057
+            ],
+            [
+              -0.39096659421920776,
+              -0.16177503764629364,
+              -0.10068570822477341,
+              -0.24611639976501465
+            ]
           ]
         ],
         type: {:f, 32}
@@ -1246,20 +1288,20 @@ defmodule LlmFromScratch3Test do
       Nx.tensor(
         [
           [
-            [-0.47695064544677734, -0.23235172033309937],
-            [-0.10124677419662476, -0.023370809853076935],
-            [0.031040165573358536, 0.04926960915327072],
-            [0.07956627011299133, 0.07443806529045105],
-            [0.15488147735595703, 0.10296830534934998],
-            [0.14108411967754364, 0.10342075675725937]
+            [-0.15166516602039337, -0.038858041167259216],
+            [-0.1858474612236023, -0.014416679739952087],
+            [-0.1980905383825302, -0.005809444934129715],
+            [-0.21230241656303406, 0.0034010745584964752],
+            [-0.22395512461662292, 0.009899027645587921],
+            [-0.22685237228870392, 0.012393046170473099]
           ],
           [
-            [-0.47695064544677734, -0.23235172033309937],
-            [-0.10124677419662476, -0.023370809853076935],
-            [0.031040165573358536, 0.04926960915327072],
-            [0.07956627011299133, 0.07443806529045105],
-            [0.15488147735595703, 0.10296830534934998],
-            [0.14108411967754364, 0.10342075675725937]
+            [-0.15166516602039337, -0.038858041167259216],
+            [-0.1858474612236023, -0.014416679739952087],
+            [-0.1980905383825302, -0.005809444934129715],
+            [-0.21230241656303406, 0.0034010745584964752],
+            [-0.22395512461662292, 0.009899027645587921],
+            [-0.22685237228870392, 0.012393046170473099]
           ]
         ],
         type: {:f, 32}

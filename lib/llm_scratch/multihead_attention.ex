@@ -37,6 +37,8 @@ defmodule LlmScratch.MultiheadAttention do
   where `head_dim = div(d_out, num_heads)`.
   """
 
+  import Nx.Defn
+
   alias LlmScratch.SelfAttentionV2
 
   defstruct [
@@ -130,9 +132,9 @@ defmodule LlmScratch.MultiheadAttention do
     head_dim = div(d_out, num_heads)
 
     w_q = SelfAttentionV2.init_dense_weights(d_in, d_out, seed, qkv_bias, "q_proj")
-    w_k = SelfAttentionV2.init_dense_weights(d_in, d_out, seed, qkv_bias, "k_proj")
-    w_v = SelfAttentionV2.init_dense_weights(d_in, d_out, seed, qkv_bias, "v_proj")
-    out_proj = SelfAttentionV2.init_dense_weights(d_out, d_out, seed, true, "out_proj")
+    w_k = SelfAttentionV2.init_dense_weights(d_in, d_out, seed + 1, qkv_bias, "k_proj")
+    w_v = SelfAttentionV2.init_dense_weights(d_in, d_out, seed + 2, qkv_bias, "v_proj")
+    out_proj = SelfAttentionV2.init_dense_weights(d_out, d_out, seed + 3, true, "out_proj")
 
     mask =
       Nx.broadcast(1.0, {context_length, context_length})
@@ -188,23 +190,45 @@ defmodule LlmScratch.MultiheadAttention do
     * tensor of shape `{batch_size, num_tokens, d_out}`
   """
   def forward(%__MODULE__{} = mha, %Nx.Tensor{} = x, opts \\ []) do
-    {batch_size, num_tokens, _} = validate_input_shape!(x, mha.d_in)
+    {_batch_size, num_tokens, _} = validate_input_shape!(x, mha.d_in)
     validate_context_length!(num_tokens, mha.context_length)
+
+    {attn_weights, values} = attention_weights_and_values_defn(mha, x)
+
+    attn_weights
+    |> maybe_dropout(mha, opts)
+    |> context_from_weights_defn(values, mha.out_proj)
+  end
+
+  @doc """
+  Defn-compatible training pass. Applies attention dropout and returns the next
+  RNG key.
+  """
+  defn train(mha, x, key) do
+    {attn_weights, values} = attention_weights_and_values_defn(mha, x)
+    {attn_weights, key} = dropout_defn(attn_weights, mha.dropout, key)
+
+    {context_from_weights_defn(attn_weights, values, mha.out_proj), key}
+  end
+
+  defnp attention_weights_and_values_defn(mha, x) do
+    batch_size = Nx.axis_size(x, 0)
+    num_tokens = Nx.axis_size(x, 1)
 
     keys =
       x
-      |> SelfAttentionV2.dense_project(mha.w_k)
-      |> split_heads(batch_size, num_tokens, mha.num_heads, mha.head_dim)
+      |> dense_project_defn(mha.w_k, mha.qkv_bias)
+      |> split_heads_defn(batch_size, num_tokens, mha.num_heads, mha.head_dim)
 
     queries =
       x
-      |> SelfAttentionV2.dense_project(mha.w_q)
-      |> split_heads(batch_size, num_tokens, mha.num_heads, mha.head_dim)
+      |> dense_project_defn(mha.w_q, mha.qkv_bias)
+      |> split_heads_defn(batch_size, num_tokens, mha.num_heads, mha.head_dim)
 
     values =
       x
-      |> SelfAttentionV2.dense_project(mha.w_v)
-      |> split_heads(batch_size, num_tokens, mha.num_heads, mha.head_dim)
+      |> dense_project_defn(mha.w_v, mha.qkv_bias)
+      |> split_heads_defn(batch_size, num_tokens, mha.num_heads, mha.head_dim)
 
     attn_scores = Nx.dot(queries, [3], [0, 1], keys, [3], [0, 1])
 
@@ -217,25 +241,59 @@ defmodule LlmScratch.MultiheadAttention do
       |> Nx.broadcast({batch_size, mha.num_heads, num_tokens, num_tokens})
 
     neg_inf = Nx.broadcast(:neg_infinity, Nx.shape(attn_scores))
-    masked_scores = Nx.select(mask, neg_inf, attn_scores)
 
-    context =
-      masked_scores
+    attn_weights =
+      mask
+      |> Nx.select(neg_inf, attn_scores)
       |> Nx.divide(Nx.sqrt(mha.head_dim))
       |> Axon.Activations.softmax(axis: -1)
-      |> maybe_dropout(mha, opts)
-      |> Nx.dot([3], [0, 1], values, [2], [0, 1])
-      |> Nx.transpose(axes: [0, 2, 1, 3])
-      |> Nx.reshape({batch_size, num_tokens, mha.d_out})
 
-    SelfAttentionV2.dense_project(context, mha.out_proj)
+    {attn_weights, values}
   end
 
-  @doc false
-  defp split_heads(tensor, batch_size, num_tokens, num_heads, head_dim) do
+  defnp context_from_weights_defn(attn_weights, values, out_proj) do
+    batch_size = Nx.axis_size(values, 0)
+    d_out = Nx.axis_size(values, 1) * Nx.axis_size(values, 3)
+    num_tokens = Nx.axis_size(values, 2)
+
+    attn_weights
+    |> Nx.dot([3], [0, 1], values, [2], [0, 1])
+    |> Nx.transpose(axes: [0, 2, 1, 3])
+    |> Nx.reshape({batch_size, num_tokens, d_out})
+    |> SelfAttentionV2.dense_project_defn(out_proj)
+  end
+
+  defnp dense_project_defn(inputs, %{kernel: kernel, bias: bias}, use_bias) do
+    projected = Nx.dot(inputs, [-1], kernel, [0])
+
+    if use_bias do
+      Nx.add(projected, bias)
+    else
+      projected
+    end
+  end
+
+  defnp split_heads_defn(tensor, batch_size, num_tokens, num_heads, head_dim) do
     tensor
     |> Nx.reshape({batch_size, num_tokens, num_heads, head_dim})
     |> Nx.transpose(axes: [0, 2, 1, 3])
+  end
+
+  defn dropout_defn(x, dropout, key) do
+    if dropout == 0.0 do
+      {x, key}
+    else
+      keep_prob = 1.0 - dropout
+      {samples, key} = Nx.Random.uniform(key, shape: Nx.shape(x), type: Nx.type(x))
+      mask = Nx.greater_equal(samples, dropout)
+
+      dropped =
+        x
+        |> Nx.multiply(Nx.as_type(mask, Nx.type(x)))
+        |> Nx.divide(keep_prob)
+
+      {dropped, key}
+    end
   end
 
   @doc """

@@ -83,8 +83,8 @@ defmodule LlmScratch.CausalAttention do
     dropout = normalize_dropout(dropout)
 
     w_q = SelfAttentionV2.init_dense_weights(d_in, d_out, seed, qkv_bias, "q_proj")
-    w_k = SelfAttentionV2.init_dense_weights(d_in, d_out, seed, qkv_bias, "k_proj")
-    w_v = SelfAttentionV2.init_dense_weights(d_in, d_out, seed, qkv_bias, "v_proj")
+    w_k = SelfAttentionV2.init_dense_weights(d_in, d_out, seed + 1, qkv_bias, "k_proj")
+    w_v = SelfAttentionV2.init_dense_weights(d_in, d_out, seed + 2, qkv_bias, "v_proj")
 
     mask =
       Nx.broadcast(1.0, {context_length, context_length})

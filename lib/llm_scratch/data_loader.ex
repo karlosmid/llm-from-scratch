@@ -4,8 +4,10 @@ defmodule LlmScratch.DataLoader do
 
   Returns a map with:
   - `:stream` - an infinite stream of batches
+  - `:batches` - the finite batch list used for one epoch
   - `:length` - number of batches in one pass over the dataset
   - `:batch_size` - configured batch size (default `32`)
+  - `:shuffle` - whether batches are shuffled
   - `:drop_last` - whether incomplete batches are dropped
   - `:num_workers` - concurrency used by `iterate/2`
 
@@ -32,8 +34,10 @@ defmodule LlmScratch.DataLoader do
 
     %{
       stream: stream,
+      batches: batches,
       length: length(batches),
       batch_size: batch_size,
+      shuffle: shuffle,
       drop_last: drop_last,
       num_workers: num_workers
     }

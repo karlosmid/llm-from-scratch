@@ -10,6 +10,8 @@ defmodule LlmScratch.EmbeddingNative do
     * `call/2`
   """
 
+  import Nx.Defn
+
   defstruct [:weight, :vocab_size, :embedding_dim, :seed]
 
   @type t :: %__MODULE__{
@@ -74,6 +76,13 @@ defmodule LlmScratch.EmbeddingNative do
   embedding matrix.
   """
   def forward(%__MODULE__{weight: weight}, token_ids) do
+    forward_defn(%{weight: weight}, token_ids)
+  end
+
+  @doc """
+  Defn-compatible embedding lookup used by training paths.
+  """
+  defn forward_defn(%{weight: weight}, token_ids) do
     token_ids
     |> Nx.as_type({:s, 64})
     |> then(&Nx.take(weight, &1, axis: 0))

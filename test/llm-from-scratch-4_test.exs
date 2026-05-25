@@ -58,27 +58,27 @@ defmodule LlmFromScratch4Test do
 
     # we only check first 5 dimensions of logits, as their full dimensions of 50_257 is too large
     assert_close(logits[[0, 0, 0..4]], [
-      0.09030798077583313,
-      -0.020954661071300507,
-      0.14234550297260284,
-      -0.003979288041591644,
-      -0.07776273787021637
+      -1.0838192701339722,
+      0.10854823887348175,
+      -0.9204262495040894,
+      -0.5492112636566162,
+      -0.42170631885528564
     ])
 
     assert_close(logits[[0, 1, 0..4]], [
-      0.03524987772107124,
-      -0.2750282883644104,
-      0.20687848329544067,
-      0.03522858768701553,
-      0.037489306181669235
+      0.20074480772018433,
+      -0.6299676895141602,
+      -0.5332406163215637,
+      0.07905222475528717,
+      -0.2020033895969391
     ])
 
     assert_close(logits[[1, 3, 0..4]], [
-      -0.23411811888217926,
-      0.2425902932882309,
-      0.18158411979675293,
-      0.2798754572868347,
-      -0.35763686895370483
+      -0.17999911308288574,
+      0.13501380383968353,
+      -0.17671337723731995,
+      0.23288659751415253,
+      -0.6968441009521484
     ])
   end
 
@@ -192,13 +192,13 @@ defmodule LlmFromScratch4Test do
     gradient_means = ExampleDeepNeuralNetwork.weight_gradient_means(gradients)
 
     assert Nx.shape(ExampleDeepNeuralNetwork.forward(model, sample_input)) == {1, 1}
-    assert_close(loss, Nx.tensor(2.9010625e-6, type: {:f, 32}), atol: 1.0e-12)
+    assert_close(loss, Nx.tensor(8.2065868e-5, type: {:f, 32}), atol: 1.0e-12)
 
-    assert_close(Enum.at(gradient_means, 0), Nx.tensor(1.9688005e-5), atol: 1.0e-10)
-    assert_close(Enum.at(gradient_means, 1), Nx.tensor(8.4962267e-6), atol: 1.0e-10)
-    assert_close(Enum.at(gradient_means, 2), Nx.tensor(1.0740861e-5), atol: 1.0e-10)
-    assert_close(Enum.at(gradient_means, 3), Nx.tensor(1.0382744e-5), atol: 1.0e-10)
-    assert_close(Enum.at(gradient_means, 4), Nx.tensor(5.419739e-6), atol: 1.0e-10)
+    assert_close(Enum.at(gradient_means, 0), Nx.tensor(2.4578355e-6), atol: 1.0e-10)
+    assert_close(Enum.at(gradient_means, 1), Nx.tensor(1.9805896e-6), atol: 1.0e-10)
+    assert_close(Enum.at(gradient_means, 2), Nx.tensor(6.4936112e-6), atol: 1.0e-10)
+    assert_close(Enum.at(gradient_means, 3), Nx.tensor(1.8048966e-5), atol: 1.0e-10)
+    assert_close(Enum.at(gradient_means, 4), Nx.tensor(0.0012647201), atol: 1.0e-10)
   end
 
   test "deep neural network asserts larger gradient flow with shortcuts" do
@@ -212,13 +212,13 @@ defmodule LlmFromScratch4Test do
     gradient_means = ExampleDeepNeuralNetwork.weight_gradient_means(gradients)
 
     assert Nx.shape(ExampleDeepNeuralNetwork.forward(model, sample_input)) == {1, 1}
-    assert_close(loss, Nx.tensor(0.02248338, type: {:f, 32}), atol: 1.0e-8)
+    assert_close(loss, Nx.tensor(0.028082285, type: {:f, 32}), atol: 1.0e-8)
 
-    assert_close(Enum.at(gradient_means, 0), Nx.tensor(0.0034418134), atol: 1.0e-8)
-    assert_close(Enum.at(gradient_means, 1), Nx.tensor(0.008453862), atol: 1.0e-8)
-    assert_close(Enum.at(gradient_means, 2), Nx.tensor(0.0049184095), atol: 1.0e-8)
-    assert_close(Enum.at(gradient_means, 3), Nx.tensor(0.003547175), atol: 1.0e-8)
-    assert_close(Enum.at(gradient_means, 4), Nx.tensor(0.00962014), atol: 1.0e-8)
+    assert_close(Enum.at(gradient_means, 0), Nx.tensor(0.020165419), atol: 1.0e-8)
+    assert_close(Enum.at(gradient_means, 1), Nx.tensor(0.016792936), atol: 1.0e-8)
+    assert_close(Enum.at(gradient_means, 2), Nx.tensor(0.0017014839), atol: 1.0e-8)
+    assert_close(Enum.at(gradient_means, 3), Nx.tensor(0.0014477824), atol: 1.0e-8)
+    assert_close(Enum.at(gradient_means, 4), Nx.tensor(0.18616086), atol: 1.0e-8)
 
     without_shortcut =
       ExampleDeepNeuralNetwork.new(layer_sizes, use_shortcut: false, seed: 123)
@@ -424,10 +424,10 @@ defmodule LlmFromScratch4Test do
 
     assert encoded == [15496, 11, 314, 716]
     assert Nx.shape(encoded_tensor) == {1, 4}
-    assert output_tokens == [15496, 11, 314, 716, 8026, 707, 38647, 1336, 10296, 24545]
+    assert output_tokens == [15496, 11, 314, 716, 45_583, 34_995, 16_831, 23_463, 3268, 44_020]
     assert Nx.shape(out) == {1, 10}
     assert length(output_tokens) == 10
-    assert decoded_text == "Hello, I am Stoneaw Eas full gentle Rhode"
+    assert decoded_text == "Hello, I am leaping shootout inmates commits IN interacts"
   end
 
   test "exercise 4.3 supports separate dropout rates for GPT dropout sites" do

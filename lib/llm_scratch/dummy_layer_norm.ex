@@ -25,6 +25,8 @@ defmodule LlmScratch.DummyLayerNorm do
   `torch.zeros(emb_dim)`.
   """
 
+  import Nx.Defn
+
   defstruct [:emb_dim, :eps, :scale, :shift]
 
   @type t :: %__MODULE__{
@@ -100,6 +102,13 @@ defmodule LlmScratch.DummyLayerNorm do
   def forward(%__MODULE__{} = layer_norm, %Nx.Tensor{} = x) do
     validate_last_axis!(x, layer_norm.emb_dim)
 
+    forward_defn(layer_norm, x)
+  end
+
+  @doc """
+  Defn-compatible layer normalization used by training paths.
+  """
+  defn forward_defn(layer_norm, x) do
     mean = Nx.mean(x, axes: [-1], keep_axes: true)
     var = Nx.variance(x, axes: [-1], keep_axes: true)
     norm_x = Nx.divide(Nx.subtract(x, mean), Nx.sqrt(Nx.add(var, layer_norm.eps)))

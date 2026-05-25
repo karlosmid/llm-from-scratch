@@ -20,6 +20,8 @@ defmodule LlmScratch.TransformerBlock do
   position-wise feed-forward network, and residual shortcut connections.
   """
 
+  import Nx.Defn
+
   alias LlmScratch.{
     DummyLayerNorm,
     FeedForward,
@@ -70,7 +72,7 @@ defmodule LlmScratch.TransformerBlock do
           params.qkv_bias,
           seed: seed
         ),
-      ff: FeedForward.new(cfg, seed: seed + 1),
+      ff: FeedForward.new(cfg, seed: seed + 4),
       norm1: DummyLayerNorm.new(params.emb_dim, eps: norm_eps),
       norm2: DummyLayerNorm.new(params.emb_dim, eps: norm_eps),
       drop_shortcut: params.shortcut_drop_rate
@@ -111,6 +113,34 @@ defmodule LlmScratch.TransformerBlock do
       shortcut_opts(opts, :shortcut_key2)
     )
     |> Nx.add(shortcut)
+  end
+
+  @doc """
+  Defn-compatible training pass. Applies attention and shortcut dropout and
+  returns the next RNG key.
+  """
+  defn train(block, x, key) do
+    shortcut = x
+
+    x =
+      block.norm1
+      |> DummyLayerNorm.forward_defn(x)
+      |> then(fn x -> MultiheadAttention.train(block.att, x, key) end)
+
+    {x, key} = x
+    {x, key} = MultiheadAttention.dropout_defn(x, block.drop_shortcut, key)
+    x = Nx.add(x, shortcut)
+
+    shortcut = x
+
+    x =
+      block.norm2
+      |> DummyLayerNorm.forward_defn(x)
+      |> then(&FeedForward.forward_defn(block.ff, &1))
+
+    {x, key} = MultiheadAttention.dropout_defn(x, block.drop_shortcut, key)
+
+    {Nx.add(x, shortcut), key}
   end
 
   @spec call(t(), Nx.Tensor.t()) :: Nx.Tensor.t()

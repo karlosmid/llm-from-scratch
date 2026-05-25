@@ -15,6 +15,8 @@ defmodule LlmScratch.GPTModel do
   `LlmScratch.TransformerBlock` for the actual attention and feed-forward stack.
   """
 
+  import Nx.Defn
+
   alias LlmScratch.{
     DummyLayerNorm,
     EmbeddingNative,
@@ -60,22 +62,18 @@ defmodule LlmScratch.GPTModel do
       drop_emb: GPTConfig.embedding_dropout(cfg),
       trf_blocks: transformer_blocks(cfg, seed + 2, norm_eps),
       final_norm: DummyLayerNorm.new(cfg.emb_dim, eps: norm_eps),
-      out_head: init_out_head(cfg, seed + 2 + cfg.n_layers)
+      out_head: init_out_head(cfg, seed + 2 + cfg.n_layers * 8)
     }
   end
 
-  @spec forward(t(), Nx.Tensor.t(), keyword()) :: Nx.Tensor.t()
+  @spec forward(t(), Nx.Tensor.t()) :: Nx.Tensor.t()
   @doc """
-  Runs a forward pass over token ids shaped `{batch_size, seq_len}`.
+  Runs an evaluation forward pass over token ids shaped `{batch_size, seq_len}`.
 
   The returned logits have shape `{batch_size, seq_len, vocab_size}`.
-
-  Forward options:
-
-    * `:mode` - `:inference` or `:train`. Defaults to `:inference`.
-    * `:key` - optional `Nx.Random` key used by dropout in train mode.
+  Dropout is disabled, matching PyTorch `model.eval()`.
   """
-  def forward(%__MODULE__{} = model, %Nx.Tensor{} = in_idx, opts \\ []) do
+  def forward(%__MODULE__{} = model, %Nx.Tensor{} = in_idx) do
     {_batch_size, seq_len} = validate_input_shape!(in_idx)
     validate_context_length!(seq_len, model.cfg.context_length)
 
@@ -88,14 +86,10 @@ defmodule LlmScratch.GPTModel do
     x =
       tok_embeds
       |> Nx.add(pos_embeds)
-      |> MultiheadAttention.maybe_dropout(
-        %{dropout: model.drop_emb, seed: model.pos_emb.seed + 1},
-        dropout_opts(opts)
-      )
 
     x =
       Enum.reduce(model.trf_blocks, x, fn block, acc ->
-        TransformerBlock.forward(block, acc, opts)
+        TransformerBlock.forward(block, acc)
       end)
 
     x = DummyLayerNorm.forward(model.final_norm, x)
@@ -103,9 +97,38 @@ defmodule LlmScratch.GPTModel do
     linear(x, model.out_head)
   end
 
+  @spec eval(t(), Nx.Tensor.t()) :: Nx.Tensor.t()
+  @doc """
+  Alias for `forward/2`, named after PyTorch evaluation mode.
+  """
+  def eval(model, in_idx), do: forward(model, in_idx)
+
+  @doc """
+  Defn-compatible training forward pass.
+
+  Dropout is enabled, matching PyTorch `model.train()`. The caller must pass an
+  explicit `Nx.Random` key; the updated key is returned with the logits.
+  """
+  defn train(model, in_idx, key) do
+    seq_len = Nx.axis_size(in_idx, 1)
+
+    tok_embeds = EmbeddingNative.forward_defn(model.tok_emb, in_idx)
+
+    pos_embeds =
+      model.pos_emb
+      |> EmbeddingNative.forward_defn(Nx.iota({seq_len}, type: {:s, 64}))
+
+    x = Nx.add(tok_embeds, pos_embeds)
+    {x, key} = MultiheadAttention.dropout_defn(x, model.drop_emb, key)
+    {x, key} = transformer_blocks_train(model.trf_blocks, x, key)
+    x = DummyLayerNorm.forward_defn(model.final_norm, x)
+
+    {linear_defn(x, model.out_head), key}
+  end
+
   @spec call(t(), Nx.Tensor.t()) :: Nx.Tensor.t()
   @doc """
-  Alias for `forward/3` using default forward options.
+  Alias for `forward/2`.
   """
   def call(model, in_idx), do: forward(model, in_idx)
 
@@ -175,7 +198,7 @@ defmodule LlmScratch.GPTModel do
 
   defp transformer_blocks(cfg, seed, norm_eps) do
     for layer_idx <- 0..(cfg.n_layers - 1) do
-      TransformerBlock.new(cfg, seed: seed + layer_idx, norm_eps: norm_eps)
+      TransformerBlock.new(cfg, seed: seed + layer_idx * 8, norm_eps: norm_eps)
     end
   end
 
@@ -194,25 +217,22 @@ defmodule LlmScratch.GPTModel do
 
   defp linear(x, %{kernel: kernel}), do: Nx.dot(x, [-1], kernel, [0])
 
+  defnp linear_defn(x, %{kernel: kernel}) do
+    Nx.dot(x, [-1], kernel, [0])
+  end
+
+  deftransformp transformer_blocks_train(blocks, x, key) do
+    Enum.reduce(blocks, {x, key}, fn block, {x, key} ->
+      TransformerBlock.train(block, x, key)
+    end)
+  end
+
   defp dense_parameters(%{kernel: kernel, bias: bias}, true),
     do: tensor_parameters(kernel) + tensor_parameters(bias)
 
   defp dense_parameters(%{kernel: kernel}, false), do: tensor_parameters(kernel)
 
   defp positional_indices(seq_len), do: Nx.iota({seq_len}, type: {:s, 64})
-
-  defp dropout_opts(opts) do
-    opts
-    |> Keyword.take([:mode, :key])
-    |> Keyword.put(:mode, mode!(opts))
-  end
-
-  defp mode!(opts) do
-    case Keyword.get(opts, :mode, :inference) do
-      mode when mode in [:train, :inference] -> mode
-      mode -> raise ArgumentError, "mode must be :train or :inference, got: #{inspect(mode)}"
-    end
-  end
 
   defp validate_input_shape!(in_idx) do
     case Nx.shape(in_idx) do

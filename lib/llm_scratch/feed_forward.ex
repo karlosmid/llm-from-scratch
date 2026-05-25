@@ -91,9 +91,16 @@ defmodule LlmScratch.FeedForward do
   def forward(%__MODULE__{} = feed_forward, %Nx.Tensor{} = x) do
     validate_last_axis!(x, feed_forward.emb_dim)
 
+    forward_defn(feed_forward, x)
+  end
+
+  @doc """
+  Defn-compatible feed-forward pass used by training paths.
+  """
+  defn forward_defn(feed_forward, x) do
     x
     |> linear_defn(feed_forward.layers.first)
-    |> GELU.forward()
+    |> GELU.forward_defn()
     |> linear_defn(feed_forward.layers.second)
   end
 
