@@ -177,17 +177,43 @@ defmodule LlmScratch.Training do
 
   alias LlmScratch.{GPTModel, LossUtils, TextGeneration, TextUtils}
 
-  defmodule SGD do
-    @moduledoc """
-    Minimal stochastic gradient descent optimizer.
-    """
-
-    defstruct [:learning_rate]
-  end
-
   defmodule AdamW do
     @moduledoc """
     Minimal AdamW optimizer state.
+
+    In the training loop, AdamW is responsible for turning the gradients from
+    `loss_and_grad/4` into a new model. Each batch computes how the loss changes
+    with respect to the model's trainable tensors; AdamW decides how large each
+    parameter update should be, applies regularization through weight decay, and
+    carries optimizer state forward to the next batch.
+
+    AdamW keeps two moving averages for each trainable tensor:
+
+      * `m` tracks the exponentially decayed average gradient.
+      * `v` tracks the exponentially decayed average squared gradient.
+
+    During each optimization step, the averages are bias-corrected with the
+    current `step`, normalized with `eps`, combined with decoupled weight
+    decay, and subtracted from the parameter using `learning_rate`.
+
+    ## Fields
+
+      * `:learning_rate` - positive scalar that controls the size of each
+        parameter update.
+      * `:weight_decay` - decoupled decay factor applied directly to
+        parameters, separate from the gradient moments.
+      * `:beta1` - exponential decay rate for `m`, the first-moment gradient
+        estimate.
+      * `:beta2` - exponential decay rate for `v`, the second-moment squared
+        gradient estimate.
+      * `:eps` - small constant added to the denominator for numerical
+        stability.
+      * `:step` - number of optimizer updates already applied; used for bias
+        correction.
+      * `:m` - first-moment tensors, lazily initialized to zeros with the same
+        shapes as the trainable parameters.
+      * `:v` - second-moment tensors, lazily initialized to zeros with the same
+        shapes as the trainable parameters.
     """
 
     defstruct learning_rate: nil,
@@ -200,27 +226,7 @@ defmodule LlmScratch.Training do
               v: nil
   end
 
-  @type optimizer :: %SGD{} | %AdamW{} | (struct(), struct() -> struct())
-
-  @spec sgd(number()) :: SGD.t()
-  @doc """
-  Creates a minimal stochastic gradient descent optimizer.
-
-  The optimizer updates each trainable parameter as:
-
-      parameter - learning_rate * gradient
-
-  ## Parameters
-
-    * `learning_rate` - positive numeric step size.
-
-  ## Returns
-
-    * `%LlmScratch.Training.SGD{}` for use with `train_model_simple/10`.
-  """
-  def sgd(learning_rate) when is_number(learning_rate) and learning_rate > 0 do
-    %SGD{learning_rate: learning_rate * 1.0}
-  end
+  @type optimizer :: %AdamW{} | (struct(), struct() -> struct())
 
   @spec adamw(number(), keyword()) :: AdamW.t()
   @doc """
@@ -229,6 +235,20 @@ defmodule LlmScratch.Training do
   This mirrors the optimizer used by the Python chapter example. Moment state is
   initialized lazily on the first optimization step because it must match the
   model's trainable parameter structure.
+
+  AdamW adapts each parameter update using the history of recent gradients:
+
+      m = beta1 * m + (1 - beta1) * gradient
+      v = beta2 * v + (1 - beta2) * gradient ** 2
+      m_hat = m / (1 - beta1 ** step)
+      v_hat = v / (1 - beta2 ** step)
+      update = m_hat / (sqrt(v_hat) + eps) + weight_decay * parameter
+      parameter = parameter - learning_rate * update
+
+  The `m` and `v` tensors start as zeros with the same shapes as the model's
+  trainable tensors. `weight_decay` is decoupled from the gradient moments,
+  which is the distinguishing behavior of AdamW compared to classic Adam with
+  L2 regularization folded into the gradient.
 
   ## Options
 
@@ -273,8 +293,10 @@ defmodule LlmScratch.Training do
       by `Nx.Container`.
     * `train_loader` - data loader map with `:stream` and `:length`.
     * `val_loader` - validation data loader map with `:stream` and `:length`.
-    * `optimizer` - either `Training.sgd/1` output or a two-argument function
-      `(model, gradients -> updated_model)`.
+    * `optimizer` - either `Training.adamw/2` output or a two-argument function
+      `(model, gradients -> updated_model)`. The built-in AdamW optimizer
+      returns updated optimizer state after each batch, so its moment estimates
+      are carried through the full training loop.
     * `device` - Nx backend target. Use `:default` or `nil` to keep tensors on
       their current backend.
     * `num_epochs` - number of full passes over `train_loader`.
@@ -303,22 +325,35 @@ defmodule LlmScratch.Training do
       when is_struct(model) and is_map(train_loader) and is_map(val_loader) and
              is_integer(num_epochs) and num_epochs >= 0 and is_integer(eval_freq) and
              eval_freq > 0 and is_integer(eval_iter) and eval_iter > 0 do
+    # Start dropout RNG from a fresh positive runtime integer, then move the
+    # key to the same backend requested for the model and batches.
     key =
       System.unique_integer([:positive])
       |> Nx.Random.key()
       |> maybe_transfer_tensor(device)
 
+    # Training state is carried through the epoch/batch reducers because Elixir
+    # data is immutable. It keeps the current model parameters, AdamW optimizer
+    # memory, dropout RNG key, progress counters, and evaluation metrics that
+    # are accumulated while learning.
     state = %{
+      # Current model parameters; replaced after each optimizer step.
       model: maybe_transfer_model(model, device),
+      # Periodic evaluation losses, stored newest-first during training.
       train_losses: [],
       val_losses: [],
+      # Token counts captured at the same evaluation points as the losses.
       track_tokens_seen: [],
+      # Running count of all tokens consumed by training batches.
       tokens_seen: 0,
+      # Batch counter; starts at -1 so the first batch becomes step 0.
       global_step: -1,
+      # Dropout RNG key; GPTModel.train/3 returns the next key for the next batch.
       key: key,
+      # Optimizer state; AdamW carries step count and moment tensors across batches.
       optimizer: optimizer
     }
-
+    # Main training loop by number of epocs
     state =
       Enum.reduce(1..num_epochs//1, state, fn epoch, state ->
         train_epoch(
@@ -426,13 +461,15 @@ defmodule LlmScratch.Training do
       matches the model structure, and `key` is the advanced RNG key.
   """
   defn loss_and_grad(model, input_batch, target_batch, key) do
-    {_logits, key} = GPTModel.train(model, input_batch, key)
-
-    {loss, gradients} =
-      value_and_grad(model, fn model ->
-        {logits, _key} = GPTModel.train(model, input_batch, key)
-        LossUtils.cross_entropy_loss_defn(logits, target_batch)
-      end)
+    {{loss, key}, {gradients, _input_gradients, _target_gradients, _key_gradients}} =
+      value_and_grad(
+        {model, input_batch, target_batch, key},
+        fn {model, input_batch, target_batch, key} ->
+          {logits, key} = GPTModel.train(model, input_batch, key)
+          {LossUtils.cross_entropy_loss_defn(logits, target_batch), key}
+        end,
+        &elem(&1, 0)
+      )
 
     {loss, gradients, key}
   end
@@ -449,11 +486,16 @@ defmodule LlmScratch.Training do
          tokenizer
        ) do
     train_loader
+    #shufle batches
     |> epoch_batches()
     |> Enum.reduce(state, fn batch, state ->
+      #separate batch inputs and targets
       {input_batch, target_batch} = stack_batch(batch, device)
+      #calculate loss and gradinets
       {_loss, gradients, key} = loss_and_grad(state.model, input_batch, target_batch, state.key)
+      #avoid overfitting and penalized larger weights
       {model, optimizer} = optimizer_step(state.optimizer, state.model, gradients)
+      #tokens that we have processed so far
       tokens_seen = state.tokens_seen + Nx.size(input_batch)
       global_step = state.global_step + 1
 
@@ -465,7 +507,7 @@ defmodule LlmScratch.Training do
           key: key,
           optimizer: optimizer
       }
-
+      #evaluate model on evaluation frequency
       if rem(global_step, eval_freq) == 0 do
         {train_loss, val_loss} =
           evaluate_model(model, train_loader, val_loader, device, eval_iter)
@@ -474,7 +516,8 @@ defmodule LlmScratch.Training do
           "Ep #{epoch} (Step #{pad_step(global_step)}): " <>
             "Train loss #{format_loss(train_loss)}, Val loss #{format_loss(val_loss)}"
         )
-
+        #generate tokens based on current model to see what model actually predicts
+        #we do not want gibberish text!
         generate_and_print_sample(model, tokenizer, device, start_context)
 
         %{
@@ -513,29 +556,18 @@ defmodule LlmScratch.Training do
       targets |> Nx.stack() |> maybe_transfer_tensor(device)
     }
   end
-
-  defp optimizer_step(%SGD{learning_rate: learning_rate} = optimizer, model, gradients) do
-    gradient_tensors = trainable_tensors(gradients)
-
-    updated_parameters =
-      model
-      |> trainable_tensors()
-      |> Enum.zip(gradient_tensors)
-      |> Enum.map(fn {parameter, gradient} ->
-        Nx.subtract(parameter, Nx.multiply(learning_rate, gradient))
-      end)
-
-    {model, []} = put_trainable_tensors(model, updated_parameters)
-
-    {model, optimizer}
-  end
-
+  # here we update model weights, central part of training algorithm
+  # we have one gradient for each model parameter (weight)x
   defp optimizer_step(%AdamW{} = optimizer, model, gradients) do
+    # extract model weights
     parameter_tensors = trainable_tensors(model)
+    # extract gradient weights
     gradient_tensors = trainable_tensors(gradients)
+    # adamw m and v tensors
     {m_tensors, v_tensors} = adamw_moments(optimizer, gradient_tensors)
     step = optimizer.step + 1
 
+    # update parameters using AdamW optimization
     {updated_parameters, {updated_m, updated_v}} =
       Enum.zip([parameter_tensors, gradient_tensors, m_tensors, v_tensors])
       |> Enum.map_reduce({[], []}, fn {parameter, gradient, m, v}, {updated_m, updated_v} ->
@@ -559,9 +591,10 @@ defmodule LlmScratch.Training do
 
         {parameter, {[m | updated_m], [v | updated_v]}}
       end)
-
+    # update model with new weight values
     {model, []} = put_trainable_tensors(model, updated_parameters)
 
+    # the next batch can continue from the accumulated AdamW moment history.
     optimizer = %{
       optimizer
       | step: step,
