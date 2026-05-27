@@ -1,0 +1,82 @@
+# LLM from Scratch 5.3 Temperature Scaling
+
+```elixir
+project_path = Path.expand("..", __DIR__)
+
+Mix.install(
+  [
+    {:llm_scratch, path: project_path},
+    {:kino, "~> 0.12"},
+    {:kino_vega_lite, "~> 0.1.11"},
+    {:vega_lite, "~> 0.1.9"}
+  ],
+  consolidate_protocols: false
+)
+```
+
+## Setup
+
+```elixir
+alias LlmScratch.TemperatureScaling
+```
+
+```elixir
+vocab = [
+  {"closer", 0},
+  {"every", 1},
+  {"effort", 2},
+  {"forward", 3},
+  {"inches", 4},
+  {"moves", 5},
+  {"pizza", 6},
+  {"toward", 7},
+  {"you", 8}
+]
+
+next_token_logits =
+  Nx.tensor([4.51, 0.89, -1.90, 6.75, 1.63, -1.62, -1.89, 6.28, 1.79])
+
+temperatures = [1, 0.1, 5]
+
+scaled_probas =
+  Enum.map(temperatures, fn temperature ->
+    TemperatureScaling.softmax_with_temperature(next_token_logits, temperature)
+  end)
+```
+
+## Plot
+
+```elixir
+alias VegaLite, as: Vl
+
+plot_data =
+  temperatures
+  |> Enum.zip(scaled_probas)
+  |> Enum.flat_map(fn {temperature, probas} ->
+    probas = Nx.to_flat_list(probas)
+
+    vocab
+    |> Enum.map(fn {token, token_id} ->
+      %{
+        token: token,
+        token_id: token_id,
+        temperature: "Temperature = #{temperature}",
+        probability: Enum.at(probas, token_id)
+      }
+    end)
+  end)
+
+Vl.new(width: 500, height: 300)
+|> Vl.data_from_values(plot_data)
+|> Vl.mark(:bar)
+|> Vl.encode_field(:x, "token",
+  type: :nominal,
+  title: nil,
+  sort: Enum.map(vocab, fn {token, _token_id} -> token end),
+  axis: [labelAngle: -90]
+)
+|> Vl.encode_field(:x_offset, "temperature", type: :nominal)
+|> Vl.encode_field(:y, "probability", type: :quantitative, title: "Probability")
+|> Vl.encode_field(:color, "temperature", type: :nominal, title: nil)
+|> Kino.VegaLite.new()
+```

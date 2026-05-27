@@ -7,6 +7,7 @@ defmodule LlmFromScratch5Test do
     GptDatasetV1,
     LossUtils,
     ModelCheckpoint,
+    TemperatureScaling,
     TextGeneration,
     TextUtils,
     Training
@@ -383,6 +384,115 @@ defmodule LlmFromScratch5Test do
              """
 
     assert decoded_text == repeated_decoded_text
+  end
+
+  test "5.3 samples next token from vocabulary probabilities" do
+    vocab = %{
+      "closer" => 0,
+      "every" => 1,
+      "effort" => 2,
+      "forward" => 3,
+      "inches" => 4,
+      "moves" => 5,
+      "pizza" => 6,
+      "toward" => 7,
+      "you" => 8
+    }
+
+    inverse_vocab = Map.new(vocab, fn {token, token_id} -> {token_id, token} end)
+
+    # Fictional logits for input text "every effort moves you"
+    next_token_logits =
+      Nx.tensor([4.51, 0.89, -1.90, 6.75, 1.63, -1.62, -1.89, 6.28, 1.79])
+
+    # logits to probability values
+    probas = Axon.Activations.softmax(next_token_logits)
+
+    # greedy algorithm
+    next_token_id =
+      probas
+      |> Nx.argmax()
+      |> Nx.to_number()
+
+    assert inverse_vocab[next_token_id] == "forward"
+
+    # this is equivalent to torch.multinomial
+    sampled_token_id = TemperatureScaling.multinomial(probas, samples: 1, seed: 123) |> hd()
+
+    assert inverse_vocab[sampled_token_id] == "toward"
+
+    # lets repeat sampling more times to get token distribution
+    # Our GPTModel becomes more creative, or better to say none deterministic,
+    # because it will generate according to this distribution:
+    # Every effort moves you forward
+    # Every effort moves you toward
+    # Every effort move you closer
+    # But it will never generate Every effort moves you pizza.
+    assert TemperatureScaling.sampled_token_frequencies(probas, inverse_vocab,
+             seed: 123,
+             samples: 1_000
+           ) == [
+             {64, "closer"},
+             {2, "every"},
+             {0, "effort"},
+             {572, "forward"},
+             {3, "inches"},
+             {0, "moves"},
+             {0, "pizza"},
+             {357, "toward"},
+             {2, "you"}
+           ]
+  end
+
+  test "exercise 5.1 counts pizza sampling frequency across temperatures" do
+    vocab = %{
+      "closer" => 0,
+      "every" => 1,
+      "effort" => 2,
+      "forward" => 3,
+      "inches" => 4,
+      "moves" => 5,
+      "pizza" => 6,
+      "toward" => 7,
+      "you" => 8
+    }
+
+    inverse_vocab = Map.new(vocab, fn {token, token_id} -> {token_id, token} end)
+    next_token_logits = Nx.tensor([4.51, 0.89, -1.90, 6.75, 1.63, -1.62, -1.89, 6.28, 1.79])
+
+    pizza_sample_counts =
+      [1, 0.1, 5]
+      |> Enum.map(fn temperature ->
+        probas = TemperatureScaling.softmax_with_temperature(next_token_logits, temperature)
+
+        {pizza_count, "pizza"} =
+          probas
+          |> TemperatureScaling.sampled_token_frequencies(inverse_vocab,
+            seed: 123,
+            samples: 1_000
+          )
+          |> Enum.find(fn {_count, token} -> token == "pizza" end)
+
+        {temperature, pizza_count}
+      end)
+
+    assert pizza_sample_counts == [{1, 0}, {0.1, 0}, {5, 39}]
+
+    # faster and acurate count for pizza
+    pizza_expected_counts =
+      [1, 0.1, 5]
+      |> Enum.map(fn temperature ->
+        probas = TemperatureScaling.softmax_with_temperature(next_token_logits, temperature)
+        # multiply probas value for pizza with sampling size
+        {temperature, Nx.to_number(probas[vocab["pizza"]]) * 1_000}
+      end)
+
+    assert [{1, temperature_1_count}, {0.1, nearly_zero}, {5, temperature_5_count}] =
+             pizza_expected_counts
+
+    assert_in_delta temperature_1_count, 0.10120050865225494, 1.0e-10
+    assert nearly_zero < 1.0e-30
+    assert_in_delta temperature_5_count, 42.99795627593994, 1.0e-10
   end
 
   defp assert_close(actual, expected, opts) do
