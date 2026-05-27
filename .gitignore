@@ -66,6 +66,9 @@ Thumbs.db
 # Ignore test artifacts
 /test/cover/
 
+# Ignore generated model checkpoints
+/ch5_2_gpt_124m.nx
+/ch5_2_gpt_124m.nx.gz
+
 # Ignore logs
 *.log
-

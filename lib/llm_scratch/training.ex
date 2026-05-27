@@ -159,12 +159,21 @@ defimpl Nx.Container, for: LlmScratch.GPTModel do
   end
 
   def serialize(model) do
-    pairs = Enum.map(@container_fields, &{&1, Map.fetch!(model, &1)})
+    pairs =
+      @container_fields
+      |> Enum.map(fn field -> {field, Map.fetch!(model, field)} end)
+      |> Keyword.update!(:trf_blocks, &List.to_tuple/1)
+
     {__MODULE__, pairs, Map.take(model, @metadata_fields)}
   end
 
   def deserialize(pairs, metadata) do
-    struct!(LlmScratch.GPTModel, Map.merge(metadata, Map.new(pairs)))
+    pairs =
+      pairs
+      |> Keyword.update!(:trf_blocks, &Tuple.to_list/1)
+      |> Map.new()
+
+    struct!(LlmScratch.GPTModel, Map.merge(metadata, pairs))
   end
 end
 
@@ -353,6 +362,7 @@ defmodule LlmScratch.Training do
       # Optimizer state; AdamW carries step count and moment tensors across batches.
       optimizer: optimizer
     }
+
     # Main training loop by number of epocs
     state =
       Enum.reduce(1..num_epochs//1, state, fn epoch, state ->
@@ -486,16 +496,16 @@ defmodule LlmScratch.Training do
          tokenizer
        ) do
     train_loader
-    #shufle batches
+    # shufle batches
     |> epoch_batches()
     |> Enum.reduce(state, fn batch, state ->
-      #separate batch inputs and targets
+      # separate batch inputs and targets
       {input_batch, target_batch} = stack_batch(batch, device)
-      #calculate loss and gradinets
+      # calculate loss and gradinets
       {_loss, gradients, key} = loss_and_grad(state.model, input_batch, target_batch, state.key)
-      #avoid overfitting and penalized larger weights
+      # avoid overfitting and penalized larger weights
       {model, optimizer} = optimizer_step(state.optimizer, state.model, gradients)
-      #tokens that we have processed so far
+      # tokens that we have processed so far
       tokens_seen = state.tokens_seen + Nx.size(input_batch)
       global_step = state.global_step + 1
 
@@ -507,7 +517,8 @@ defmodule LlmScratch.Training do
           key: key,
           optimizer: optimizer
       }
-      #evaluate model on evaluation frequency
+
+      # evaluate model on evaluation frequency
       if rem(global_step, eval_freq) == 0 do
         {train_loss, val_loss} =
           evaluate_model(model, train_loader, val_loader, device, eval_iter)
@@ -516,8 +527,9 @@ defmodule LlmScratch.Training do
           "Ep #{epoch} (Step #{pad_step(global_step)}): " <>
             "Train loss #{format_loss(train_loss)}, Val loss #{format_loss(val_loss)}"
         )
-        #generate tokens based on current model to see what model actually predicts
-        #we do not want gibberish text!
+
+        # generate tokens based on current model to see what model actually predicts
+        # we do not want gibberish text!
         generate_and_print_sample(model, tokenizer, device, start_context)
 
         %{
@@ -556,6 +568,7 @@ defmodule LlmScratch.Training do
       targets |> Nx.stack() |> maybe_transfer_tensor(device)
     }
   end
+
   # here we update model weights, central part of training algorithm
   # we have one gradient for each model parameter (weight)x
   defp optimizer_step(%AdamW{} = optimizer, model, gradients) do
@@ -591,6 +604,7 @@ defmodule LlmScratch.Training do
 
         {parameter, {[m | updated_m], [v | updated_v]}}
       end)
+
     # update model with new weight values
     {model, []} = put_trainable_tensors(model, updated_parameters)
 

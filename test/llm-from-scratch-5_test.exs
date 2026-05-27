@@ -6,6 +6,7 @@ defmodule LlmFromScratch5Test do
     GPTModel,
     GptDatasetV1,
     LossUtils,
+    ModelCheckpoint,
     TextGeneration,
     TextUtils,
     Training
@@ -332,6 +333,56 @@ defmodule LlmFromScratch5Test do
     assert Enum.all?(val_losses, &is_float/1)
     assert Enum.all?(train_losses ++ val_losses, &(&1 > 0.0))
     assert %GPTModel{} = trained_model
+
+    checkpoint_path = "ch5_2_gpt_124m.nx"
+    ModelCheckpoint.save!(trained_model, checkpoint_path)
+
+    assert File.exists?(checkpoint_path)
+    assert File.stat!(checkpoint_path).size > 0
+  end
+
+  test "5.3 load trained model checkpoint and generate text" do
+    previous_backend = Nx.default_backend()
+    Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    checkpoint_path = "ch5_2_gpt_124m.nx"
+    assert File.exists?(checkpoint_path)
+
+    trained_model = ModelCheckpoint.load!(checkpoint_path)
+    tokenizer = "code-davinci-002"
+
+    token_ids =
+      TextGeneration.generate_text_simple(
+        trained_model,
+        TextUtils.text_to_token_ids("Every effort moves you", tokenizer),
+        25,
+        trained_model.cfg.context_length
+      )
+      |> Nx.backend_transfer(Nx.BinaryBackend)
+
+    repeated_token_ids =
+      TextGeneration.generate_text_simple(
+        trained_model,
+        TextUtils.text_to_token_ids("Every effort moves you", tokenizer),
+        25,
+        trained_model.cfg.context_length
+      )
+      |> Nx.backend_transfer(Nx.BinaryBackend)
+
+    decoded_text = TextUtils.token_ids_to_text(token_ids, tokenizer)
+    repeated_decoded_text = TextUtils.token_ids_to_text(repeated_token_ids, tokenizer)
+
+    assert Nx.shape(token_ids) == {1, 29}
+
+    assert decoded_text ==
+             """
+             Every effort moves you?"
+
+             "Yes--quite insensible to the fact with a laugh: "Yes--and by me to me to\
+             """
+
+    assert decoded_text == repeated_decoded_text
   end
 
   defp assert_close(actual, expected, opts) do
