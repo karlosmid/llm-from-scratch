@@ -495,6 +495,59 @@ defmodule LlmFromScratch5Test do
     assert_in_delta temperature_5_count, 42.99795627593994, 1.0e-10
   end
 
+  test "5.3.2 top-k sampling masks logits outside top k" do
+    next_token_logits =
+      Nx.tensor([4.51, 0.89, -1.90, 6.75, 1.63, -1.62, -1.89, 6.28, 1.79])
+
+    top_k = 3
+    {top_logits, top_pos} = Nx.top_k(next_token_logits, k: top_k)
+
+    assert Nx.all_close(top_logits, Nx.tensor([6.75, 6.28, 4.51]))
+    assert Nx.to_flat_list(top_pos) == [3, 7, 0]
+
+    min_top_logit = top_logits[top_k - 1]
+
+    new_logits =
+      Nx.select(
+        Nx.less(next_token_logits, min_top_logit),
+        Nx.broadcast(:neg_infinity, Nx.shape(next_token_logits)),
+        next_token_logits
+      )
+
+    assert Nx.all_close(
+             new_logits,
+             Nx.tensor([
+               4.51,
+               :neg_infinity,
+               :neg_infinity,
+               6.75,
+               :neg_infinity,
+               :neg_infinity,
+               :neg_infinity,
+               6.28,
+               :neg_infinity
+             ])
+           )
+
+    topk_probas = Axon.Activations.softmax(new_logits)
+
+    assert Nx.all_close(
+             topk_probas,
+             Nx.tensor([
+               0.0615,
+               0.0000,
+               0.0000,
+               0.5775,
+               0.0000,
+               0.0000,
+               0.0000,
+               0.3610,
+               0.0000
+             ]),
+             atol: 1.0e-4
+           )
+  end
+
   defp assert_close(actual, expected, opts) do
     atol = Keyword.get(opts, :atol, 1.0e-6)
 
