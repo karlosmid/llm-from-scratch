@@ -548,6 +548,58 @@ defmodule LlmFromScratch5Test do
            )
   end
 
+  test "5.3.3 generate uses temperature scaling and top-k sampling" do
+    previous_backend = Nx.default_backend()
+    Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    checkpoint_path = "ch5_2_gpt_124m.nx"
+    assert File.exists?(checkpoint_path)
+
+    model = ModelCheckpoint.load!(checkpoint_path)
+    tokenizer = "code-davinci-002"
+
+    token_ids =
+      TextGeneration.generate(
+        model,
+        TextUtils.text_to_token_ids("Every effort moves you", tokenizer),
+        15,
+        model.cfg.context_length,
+        1.4,
+        25
+      )
+      |> Nx.backend_transfer(Nx.BinaryBackend)
+
+    decoded_text = TextUtils.token_ids_to_text(token_ids, tokenizer)
+
+    assert Nx.to_flat_list(token_ids) == [
+             6109,
+             3626,
+             6100,
+             345,
+             7109,
+             284,
+             766,
+             9074,
+             13,
+             198,
+             40,
+             329,
+             340,
+             547,
+             11,
+             290,
+             9074,
+             13,
+             843
+           ]
+
+    assert decoded_text == """
+           Every effort moves youdr to see Mrs.
+           I for it were, and Mrs. And\
+           """
+  end
+
   defp assert_close(actual, expected, opts) do
     atol = Keyword.get(opts, :atol, 1.0e-6)
 
