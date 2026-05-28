@@ -286,8 +286,11 @@ defmodule LlmScratch.Training do
           pos_integer(),
           pos_integer(),
           String.t(),
-          String.t()
-        ) :: {struct(), [float()], [float()], [non_neg_integer()]}
+          String.t(),
+          keyword()
+        ) ::
+          {struct(), [float()], [float()], [non_neg_integer()]}
+          | {struct(), optimizer(), [float()], [float()], [non_neg_integer()]}
   @doc """
   Trains a GPT-style model with a simple batch loop.
 
@@ -314,10 +317,17 @@ defmodule LlmScratch.Training do
       evaluation.
     * `start_context` - prompt used by `generate_and_print_sample/4`.
     * `tokenizer` - tokenizer name passed to `Tiktoken`.
+    * `opts` - optional settings:
+      * `:return_optimizer` - when `true`, include the final optimizer state in
+        the return tuple for training checkpoints.
+      * `:generate_samples` - when `false`, skip text sample generation during
+        evaluation. Defaults to `true`.
 
   ## Returns
 
-    * `{model, train_losses, val_losses, track_tokens_seen}`.
+    * `{model, train_losses, val_losses, track_tokens_seen}` by default.
+    * `{model, optimizer, train_losses, val_losses, track_tokens_seen}` when
+      `return_optimizer: true`.
   """
   def train_model_simple(
         model,
@@ -329,11 +339,12 @@ defmodule LlmScratch.Training do
         eval_freq,
         eval_iter,
         start_context,
-        tokenizer
+        tokenizer,
+        opts \\ []
       )
       when is_struct(model) and is_map(train_loader) and is_map(val_loader) and
              is_integer(num_epochs) and num_epochs >= 0 and is_integer(eval_freq) and
-             eval_freq > 0 and is_integer(eval_iter) and eval_iter > 0 do
+             eval_freq > 0 and is_integer(eval_iter) and eval_iter > 0 and is_list(opts) do
     # Start dropout RNG from a fresh positive runtime integer, then move the
     # key to the same backend requested for the model and batches.
     key =
@@ -375,16 +386,20 @@ defmodule LlmScratch.Training do
           eval_freq,
           eval_iter,
           start_context,
-          tokenizer
+          tokenizer,
+          opts
         )
       end)
 
-    {
-      state.model,
-      Enum.reverse(state.train_losses),
-      Enum.reverse(state.val_losses),
-      Enum.reverse(state.track_tokens_seen)
-    }
+    train_losses = Enum.reverse(state.train_losses)
+    val_losses = Enum.reverse(state.val_losses)
+    tokens_seen = Enum.reverse(state.track_tokens_seen)
+
+    if Keyword.get(opts, :return_optimizer, false) do
+      {state.model, state.optimizer, train_losses, val_losses, tokens_seen}
+    else
+      {state.model, train_losses, val_losses, tokens_seen}
+    end
   end
 
   @doc """
@@ -493,7 +508,8 @@ defmodule LlmScratch.Training do
          eval_freq,
          eval_iter,
          start_context,
-         tokenizer
+         tokenizer,
+         opts
        ) do
     train_loader
     # shufle batches
@@ -528,9 +544,11 @@ defmodule LlmScratch.Training do
             "Train loss #{format_loss(train_loss)}, Val loss #{format_loss(val_loss)}"
         )
 
-        # generate tokens based on current model to see what model actually predicts
-        # we do not want gibberish text!
-        generate_and_print_sample(model, tokenizer, device, start_context)
+        if Keyword.get(opts, :generate_samples, true) do
+          # generate tokens based on current model to see what model actually predicts
+          # we do not want gibberish text!
+          generate_and_print_sample(model, tokenizer, device, start_context)
+        end
 
         %{
           state
@@ -753,4 +771,59 @@ defmodule LlmScratch.Training do
     |> Integer.to_string()
     |> String.pad_leading(6, "0")
   end
+end
+
+defimpl Nx.Container, for: LlmScratch.Training.AdamW do
+  @metadata_fields [:learning_rate, :weight_decay, :beta1, :beta2, :eps, :step]
+
+  def traverse(%{m: nil, v: nil} = optimizer, acc, _fun), do: {optimizer, acc}
+
+  def traverse(optimizer, acc, fun) do
+    {m, acc} = Enum.map_reduce(optimizer.m || [], acc, fun)
+    {v, acc} = Enum.map_reduce(optimizer.v || [], acc, fun)
+
+    {%{optimizer | m: empty_to_nil(m), v: empty_to_nil(v)}, acc}
+  end
+
+  def reduce(%{m: nil, v: nil}, acc, _fun), do: acc
+
+  def reduce(optimizer, acc, fun) do
+    acc
+    |> reduce_tensors(optimizer.m, fun)
+    |> reduce_tensors(optimizer.v, fun)
+  end
+
+  def serialize(%{m: nil, v: nil} = optimizer) do
+    {__MODULE__, [], Map.take(optimizer, @metadata_fields)}
+  end
+
+  def serialize(optimizer) do
+    pairs =
+      []
+      |> maybe_put_tuple(:m, optimizer.m)
+      |> maybe_put_tuple(:v, optimizer.v)
+
+    {__MODULE__, pairs, Map.take(optimizer, @metadata_fields)}
+  end
+
+  def deserialize(pairs, metadata) do
+    optimizer_state =
+      pairs
+      |> Map.new()
+      |> Map.update(:m, nil, &Tuple.to_list/1)
+      |> Map.update(:v, nil, &Tuple.to_list/1)
+
+    struct!(LlmScratch.Training.AdamW, Map.merge(metadata, optimizer_state))
+  end
+
+  defp reduce_tensors(acc, nil, _fun), do: acc
+
+  defp reduce_tensors(acc, tensors, fun),
+    do: Enum.reduce(tensors, acc, fn tensor, acc -> fun.(tensor, acc) end)
+
+  defp maybe_put_tuple(pairs, _field, nil), do: pairs
+  defp maybe_put_tuple(pairs, field, tensors), do: [{field, List.to_tuple(tensors)} | pairs]
+
+  defp empty_to_nil([]), do: nil
+  defp empty_to_nil(tensors), do: tensors
 end

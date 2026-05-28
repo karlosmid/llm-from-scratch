@@ -600,6 +600,111 @@ defmodule LlmFromScratch5Test do
            """
   end
 
+  @tag :train
+  @tag timeout: 180_000
+  test "5.4 load model and optimizer checkpoint and continue pretraining" do
+    previous_backend = Nx.default_backend()
+    device = Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    checkpoint_path = Path.join(System.tmp_dir!(), "ch5_4_model_and_optimizer.nx")
+    on_exit(fn -> File.rm(checkpoint_path) end)
+
+    tokenizer = "code-davinci-002"
+    raw_text = String.duplicate("Every effort moves you forward. ", 120)
+
+    gpt_config = %GPTConfig{
+      vocab_size: 50_257,
+      context_length: 16,
+      emb_dim: 32,
+      n_heads: 4,
+      n_layers: 1,
+      drop_rate: 0.0,
+      qkv_bias: false
+    }
+
+    train_loader =
+      GptDatasetV1.create_dataloader_v1(
+        raw_text: raw_text,
+        batch_size: 2,
+        max_length: gpt_config.context_length,
+        stride: gpt_config.context_length,
+        drop_last: true,
+        shuffle: false,
+        num_workers: 0
+      )
+
+    val_loader =
+      GptDatasetV1.create_dataloader_v1(
+        raw_text: raw_text,
+        batch_size: 2,
+        max_length: gpt_config.context_length,
+        stride: gpt_config.context_length,
+        drop_last: false,
+        shuffle: false,
+        num_workers: 0
+      )
+
+    model = GPTModel.new(gpt_config, seed: 123)
+    optimizer = Training.adamw(0.0004, weight_decay: 0.1)
+
+    {trained_model, trained_optimizer, train_losses, val_losses, tokens_seen} =
+      Training.train_model_simple(
+        model,
+        train_loader,
+        val_loader,
+        optimizer,
+        device,
+        1,
+        2,
+        1,
+        "Every effort moves you",
+        tokenizer,
+        return_optimizer: true,
+        generate_samples: false
+      )
+
+    assert %GPTModel{} = trained_model
+    assert %Training.AdamW{m: m, v: v} = trained_optimizer
+    assert trained_optimizer.step == train_loader.length
+    assert length(m) > 0
+    assert length(v) == length(m)
+    assert Enum.all?(train_losses ++ val_losses, &is_float/1)
+    assert Enum.all?(tokens_seen, &is_integer/1)
+
+    ModelCheckpoint.save_training_state!(trained_model, trained_optimizer, checkpoint_path)
+
+    %{
+      model_state_dict: loaded_model,
+      optimizer_state_dict: loaded_optimizer
+    } = ModelCheckpoint.load_training_state!(checkpoint_path)
+
+    assert %GPTModel{} = loaded_model
+    assert %Training.AdamW{} = loaded_optimizer
+    assert loaded_optimizer.step == trained_optimizer.step
+
+    {_continued_model, continued_optimizer, continued_train_losses, continued_val_losses,
+     continued_tokens_seen} =
+      Training.train_model_simple(
+        loaded_model,
+        train_loader,
+        val_loader,
+        loaded_optimizer,
+        device,
+        1,
+        2,
+        1,
+        "Every effort moves you",
+        tokenizer,
+        return_optimizer: true,
+        generate_samples: false
+      )
+
+    assert continued_optimizer.step == trained_optimizer.step + train_loader.length
+    assert Enum.all?(continued_train_losses ++ continued_val_losses, &is_float/1)
+    assert Enum.all?(continued_tokens_seen, &is_integer/1)
+  end
+
   defp assert_close(actual, expected, opts) do
     atol = Keyword.get(opts, :atol, 1.0e-6)
 
