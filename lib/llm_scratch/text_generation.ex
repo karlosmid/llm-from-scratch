@@ -64,7 +64,7 @@ defmodule LlmScratch.TextGeneration do
       Run the model.
       Take logits from the last position.
       Convert logits to probabilities.
-      Pick the highest-probability token.
+      Pick the highest-probability token with argmax.
       Append it.
       Repeat max_new_tokens times.
   """
