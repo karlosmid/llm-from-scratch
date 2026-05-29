@@ -9,9 +9,11 @@ config :pythonx, :uv_init,
   [project]
   name = "llm_scratch_test"
   version = "0.1.0"
-  requires-python = ">=3.11"
+  requires-python = ">=3.11,<3.13"
   dependencies = [
     "torch",
-    "numpy"
+    "numpy",
+    "tensorflow>=2.15.0",
+    "tqdm>=4.66"
   ]
   """

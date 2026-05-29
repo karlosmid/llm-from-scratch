@@ -82,6 +82,55 @@ defmodule LlmScratch.GPTConfig do
           qkv_bias: boolean()
         }
 
+  @openai_gpt2_model_configs %{
+    "gpt2-small (124M)" => %{emb_dim: 768, n_layers: 12, n_heads: 12},
+    "gpt2-medium (355M)" => %{emb_dim: 1024, n_layers: 24, n_heads: 16},
+    "gpt2-large (774M)" => %{emb_dim: 1280, n_layers: 36, n_heads: 20},
+    "gpt2-xl (1558M)" => %{emb_dim: 1600, n_layers: 48, n_heads: 25},
+    "124M" => %{emb_dim: 768, n_layers: 12, n_heads: 12},
+    "355M" => %{emb_dim: 1024, n_layers: 24, n_heads: 16},
+    "774M" => %{emb_dim: 1280, n_layers: 36, n_heads: 20},
+    "1558M" => %{emb_dim: 1600, n_layers: 48, n_heads: 25}
+  }
+
+  @doc """
+  Returns a GPT-2 config matching OpenAI's released checkpoint sizes.
+
+  This mirrors the book's update pattern:
+
+      NEW_CONFIG = GPT_CONFIG_124M.copy()
+      NEW_CONFIG.update(model_configs[model_name])
+      NEW_CONFIG.update({"context_length": 1024})
+      NEW_CONFIG.update({"qkv_bias": True})
+
+  Accepted names are the descriptive labels from the book and the short model
+  sizes used by the downloader:
+
+    * `"gpt2-small (124M)"` or `"124M"`
+    * `"gpt2-medium (355M)"` or `"355M"`
+    * `"gpt2-large (774M)"` or `"774M"`
+    * `"gpt2-xl (1558M)"` or `"1558M"`
+  """
+  @spec openai_gpt2(String.t()) :: t()
+  def openai_gpt2(model_name \\ "gpt2-small (124M)") when is_binary(model_name) do
+    case Map.fetch(@openai_gpt2_model_configs, model_name) do
+      {:ok, model_config} ->
+        %__MODULE__{
+          vocab_size: 50_257,
+          context_length: 1024,
+          emb_dim: model_config.emb_dim,
+          n_heads: model_config.n_heads,
+          n_layers: model_config.n_layers,
+          drop_rate: 0.0,
+          qkv_bias: true
+        }
+
+      :error ->
+        raise ArgumentError,
+              "unknown OpenAI GPT-2 model #{inspect(model_name)}; expected one of #{inspect(Map.keys(@openai_gpt2_model_configs))}"
+    end
+  end
+
   @spec embedding_dropout(t()) :: float()
   @doc """
   Returns the embedding dropout rate, falling back to `drop_rate` when unset.

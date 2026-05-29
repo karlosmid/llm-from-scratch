@@ -69,6 +69,11 @@ Thumbs.db
 # Ignore generated model checkpoints
 /ch5_2_gpt_124m.nx
 /ch5_2_gpt_124m.nx.gz
+/*.nx
+/*.nx.gz
+
+# Ignore downloaded public GPT-2 model files
+/gpt2/
 
 # Ignore logs
 *.log

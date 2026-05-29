@@ -3,6 +3,7 @@ defmodule LlmFromScratch5Test do
 
   alias LlmScratch.{
     GPTConfig,
+    GPT2OpenAI,
     GPTModel,
     GptDatasetV1,
     LossUtils,
@@ -703,6 +704,130 @@ defmodule LlmFromScratch5Test do
     assert continued_optimizer.step == trained_optimizer.step + train_loader.length
     assert Enum.all?(continued_train_losses ++ continued_val_losses, &is_float/1)
     assert Enum.all?(continued_tokens_seen, &is_integer/1)
+  end
+
+  @tag :download
+  @tag timeout: 900_000
+  test "5.5 downloads and loads public OpenAI GPT-2 124M settings and params" do
+    previous_backend = Nx.default_backend()
+    Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    {settings, params} =
+      GPT2OpenAI.download_and_load_gpt2(
+        "124M",
+        models_dir: "gpt2"
+      )
+
+    assert settings == %{
+             "n_vocab" => 50_257,
+             "n_ctx" => 1024,
+             "n_embd" => 768,
+             "n_head" => 12,
+             "n_layer" => 12
+           }
+
+    assert Map.keys(params) |> Enum.sort() == ["b", "blocks", "g", "wpe", "wte"]
+
+    assert Nx.shape(params["wte"]) == {50257, 768}
+
+    model =
+      settings
+      |> GPT2OpenAI.config_from_settings()
+      |> GPTModel.new(seed: 123, norm_eps: 1.0e-5)
+      |> GPT2OpenAI.load_weights_into_gpt(params)
+
+    tokenizer = "code-davinci-002"
+
+    token_ids =
+      TextGeneration.generate(
+        model,
+        TextUtils.text_to_token_ids("Every effort moves you", tokenizer),
+        25,
+        model.cfg.context_length,
+        1.5,
+        50
+      )
+      |> Nx.backend_transfer(Nx.BinaryBackend)
+
+    decoded_text = TextUtils.token_ids_to_text(token_ids, tokenizer)
+
+    assert decoded_text ==
+             "Every effort moves you closer to victory!\" he told the story of his friend. But if all else failed, he was determined to defeat, his"
+  end
+
+  @tag :download
+  @tag timeout: 900_000
+  test "5.5 exercise calculates The Verdict losses with OpenAI GPT-2 124M weights" do
+    previous_backend = Nx.default_backend()
+    Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    model = GPT2OpenAI.load_model("124M", models_dir: "gpt2")
+
+    file_content = File.read!("the-verdict.txt")
+    train_ratio = 0.90
+    split_idx = trunc(train_ratio * String.length(file_content))
+    train_data = String.slice(file_content, 0, split_idx)
+    val_data = String.slice(file_content, split_idx, String.length(file_content) - split_idx)
+
+    train_loader =
+      GptDatasetV1.create_dataloader_v1(
+        raw_text: train_data,
+        batch_size: 2,
+        max_length: 256,
+        stride: 256,
+        drop_last: true,
+        shuffle: false,
+        num_workers: 0
+      )
+
+    val_loader =
+      GptDatasetV1.create_dataloader_v1(
+        raw_text: val_data,
+        batch_size: 2,
+        max_length: 256,
+        stride: 256,
+        drop_last: false,
+        shuffle: false,
+        num_workers: 0
+      )
+
+    assert train_loader.length == 9
+    assert val_loader.length == 1
+
+    train_loss = LossUtils.calc_loss_loader(train_loader, model, EXLA.Backend)
+    val_loss = LossUtils.calc_loss_loader(val_loader, model, EXLA.Backend)
+
+    assert_in_delta train_loss, 3.7547634177737765, 1.0e-5
+    assert_in_delta val_loss, 3.5596354007720947, 1.0e-5
+  end
+
+  @tag :download
+  @tag timeout: 3_600_000
+  test "5.6 exercise compares generated text from GPT-2 124M and 1558M" do
+    previous_backend = Nx.default_backend()
+    Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    prompt = "Every effort moves you"
+    tokenizer = "code-davinci-002"
+
+    model = GPT2OpenAI.load_model("1558M", models_dir: "gpt2")
+
+    text =
+      model
+      |> TextGeneration.generate(
+        TextUtils.text_to_token_ids(prompt, tokenizer),
+        25,
+        model.cfg.context_length,
+        1.5,
+        50
+      )
+      |> Nx.backend_transfer(Nx.BinaryBackend)
+      |> TextUtils.token_ids_to_text(tokenizer)
+
+    assert text == "Every effort moves you farther and farther closer to it. I don't need to try all their tricks.\n\n\n(END OF TRANSCRIPT"
   end
 
   defp assert_close(actual, expected, opts) do
