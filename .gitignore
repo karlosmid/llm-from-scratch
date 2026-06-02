@@ -75,5 +75,11 @@ Thumbs.db
 # Ignore downloaded public GPT-2 model files
 /gpt2/
 
+# Ignore downloaded SMS spam dataset file
+/SMSSpamCollection.tsv
+/train.csv
+/validation.csv
+/test.csv
+
 # Ignore logs
 *.log
