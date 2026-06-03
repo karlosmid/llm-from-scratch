@@ -1,7 +1,15 @@
 defmodule LlmFromScratch6Test do
   use ExUnit.Case
 
-  alias LlmScratch.{DataLoader, FineTuneDataLoader, SpamDataset}
+  alias LlmScratch.{
+    DataLoader,
+    FineTuneDataLoader,
+    GPT2OpenAI,
+    GPTConfig,
+    SpamDataset,
+    TextGeneration,
+    TextUtils
+  }
 
   @tag :download
   test "6.1 loads SMS spam TSV rows and counts labels" do
@@ -141,4 +149,66 @@ defmodule LlmFromScratch6Test do
       Nx.stack(labels)
     }
   end
+
+  @tag :download
+  @tag timeout: 900_000
+  test "6.4 loads OpenAI GPT-2 and generates classification prompts" do
+    previous_backend = Nx.default_backend()
+    Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    choose_model = "gpt2-small (124M)"
+    tokenizer = "code-davinci-002"
+    config = GPTConfig.openai_gpt2(choose_model)
+
+    model_size =
+      choose_model
+      |> String.split(" ")
+      |> List.last()
+      |> String.trim_leading("(")
+      |> String.trim_trailing(")")
+
+    model = GPT2OpenAI.load_model(model_size, models_dir: "gpt2")
+
+    assert config.vocab_size == 50_257
+    assert config.context_length == 1024
+    assert config.drop_rate == 0.0
+    assert config.qkv_bias == true
+    assert config.emb_dim == 768
+    assert config.n_layers == 12
+    assert config.n_heads == 12
+
+    decoded_text_1 =
+      model
+      |> TextGeneration.generate_text_simple(
+        TextUtils.text_to_token_ids("Every effort moves you", tokenizer),
+        15,
+        config.context_length
+      )
+      |> Nx.backend_transfer(Nx.BinaryBackend)
+      |> TextUtils.token_ids_to_text(tokenizer)
+
+    assert decoded_text_1 ==
+             "Every effort moves you forward.\n\nThe first step is to understand the importance of your work"
+
+    text_2 =
+      "Is the following text 'spam'? Answer with 'yes' or 'no':" <>
+        " 'You are a winner you have been specially" <>
+        " selected to receive $1000 cash or a $2000 award.'"
+
+    decoded_text_2 =
+      model
+      |> TextGeneration.generate_text_simple(
+        TextUtils.text_to_token_ids(text_2, tokenizer),
+        23,
+        config.context_length
+      )
+      |> Nx.backend_transfer(Nx.BinaryBackend)
+      |> TextUtils.token_ids_to_text(tokenizer)
+
+    assert decoded_text_2 ==
+             "Is the following text 'spam'? Answer with 'yes' or 'no': 'You are a winner you have been specially selected to receive $1000 cash or a $2000 award.'\n\nThe following text 'spam'? Answer with 'yes' or 'no': 'You are a winner"
+  end
+
+
 end
