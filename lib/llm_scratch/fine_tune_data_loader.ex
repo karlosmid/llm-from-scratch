@@ -1,4 +1,6 @@
 defmodule LlmScratch.FineTuneDataLoader do
+  import Bitwise
+
   @moduledoc """
   Helpers for loading small supervised fine-tuning datasets.
 
@@ -14,6 +16,12 @@ defmodule LlmScratch.FineTuneDataLoader do
   @raw_filename "SMSSpamCollection"
   @label_ids %{"ham" => 0, "spam" => 1}
   @pad_token_id 50_256
+  @mt19937_n 624
+  @mt19937_m 397
+  @mt19937_matrix_a 0x9908B0DF
+  @mt19937_upper_mask 0x80000000
+  @mt19937_lower_mask 0x7FFFFFFF
+  @uint32_mask 0xFFFFFFFF
 
   @type spam_record :: %{
           label: String.t(),
@@ -130,7 +138,8 @@ defmodule LlmScratch.FineTuneDataLoader do
   ## Options
 
     * `:random_state` - integer seed used for sampling ham records. Defaults
-      to `123`.
+      to `123`. Sampling mirrors pandas' NumPy-backed `sample(random_state: ...)`
+      ordering.
 
   ## Output
 
@@ -153,7 +162,7 @@ defmodule LlmScratch.FineTuneDataLoader do
 
     ham_subset =
       ham_records
-      |> deterministic_sample(num_spam, random_state)
+      |> pandas_sample(num_spam, random_state)
 
     ham_subset ++ spam_records
   end
@@ -206,6 +215,8 @@ defmodule LlmScratch.FineTuneDataLoader do
   ## Options
 
     * `:random_state` - integer seed used for shuffling. Defaults to `123`.
+      Shuffling mirrors pandas' NumPy-backed `sample(frac=1, random_state=...)`
+      ordering.
 
   ## Output
 
@@ -218,7 +229,7 @@ defmodule LlmScratch.FineTuneDataLoader do
     validate_split_fractions!(train_frac, validation_frac)
 
     random_state = Keyword.get(opts, :random_state, 123)
-    shuffled_records = deterministic_sample(records, length(records), random_state)
+    shuffled_records = pandas_sample(records, length(records), random_state)
     train_end = trunc(length(shuffled_records) * train_frac)
     validation_end = train_end + trunc(length(shuffled_records) * validation_frac)
 
@@ -362,19 +373,120 @@ defmodule LlmScratch.FineTuneDataLoader do
     |> then(fn ids -> ids ++ List.duplicate(pad_token_id, max_length - length(ids)) end)
   end
 
-  defp deterministic_sample(records, count, random_state) do
-    seed = {random_state, random_state, random_state}
-    initial_state = :rand.seed_s(:exsss, seed)
+  defp pandas_sample(records, count, random_state) do
+    if count > length(records) do
+      raise ArgumentError, "cannot take a sample larger than the population"
+    end
 
-    records
-    |> Enum.map_reduce(initial_state, fn record, state ->
-      {sort_key, next_state} = :rand.uniform_s(state)
-      {{sort_key, record}, next_state}
-    end)
-    |> elem(0)
-    |> Enum.sort_by(fn {sort_key, _record} -> sort_key end)
+    records_tuple = List.to_tuple(records)
+
+    {indexes, _rng} =
+      records
+      |> length()
+      |> numpy_random_state_permutation(random_state)
+
+    indexes
     |> Enum.take(count)
-    |> Enum.map(fn {_sort_key, record} -> record end)
+    |> Enum.map(&elem(records_tuple, &1))
+  end
+
+  defp numpy_random_state_permutation(0, seed) do
+    {[], mt19937_seed(seed)}
+  end
+
+  defp numpy_random_state_permutation(size, seed) do
+    rng = mt19937_seed(seed)
+
+    {permuted, rng} =
+      (size - 1)..1//-1
+      |> Enum.reduce({List.to_tuple(Enum.to_list(0..(size - 1))), rng}, fn i, {items, rng} ->
+        {j, rng} = mt19937_random_interval(rng, i)
+        {swap_tuple(items, i, j), rng}
+      end)
+
+    {Tuple.to_list(permuted), rng}
+  end
+
+  defp mt19937_seed(seed) do
+    mt =
+      1..(@mt19937_n - 1)
+      |> Enum.reduce([seed &&& @uint32_mask], fn i, acc ->
+        previous = hd(acc)
+        next = 1_812_433_253 * bxor(previous, previous >>> 30) + i &&& @uint32_mask
+        [next | acc]
+      end)
+      |> Enum.reverse()
+      |> List.to_tuple()
+
+    %{mt: mt, index: @mt19937_n}
+  end
+
+  defp mt19937_random_interval(rng, max) do
+    mask =
+      max
+      |> then(&(&1 ||| &1 >>> 1))
+      |> then(&(&1 ||| &1 >>> 2))
+      |> then(&(&1 ||| &1 >>> 4))
+      |> then(&(&1 ||| &1 >>> 8))
+      |> then(&(&1 ||| &1 >>> 16))
+
+    mt19937_random_interval(rng, max, mask)
+  end
+
+  defp mt19937_random_interval(rng, max, mask) do
+    {value, rng} = mt19937_extract_number(rng)
+    value = value &&& mask
+
+    if value <= max do
+      {value, rng}
+    else
+      mt19937_random_interval(rng, max, mask)
+    end
+  end
+
+  defp mt19937_extract_number(%{index: @mt19937_n} = rng) do
+    rng
+    |> mt19937_twist()
+    |> mt19937_extract_number()
+  end
+
+  defp mt19937_extract_number(%{mt: mt, index: index} = rng) do
+    y = elem(mt, index)
+    y = bxor(y, y >>> 11)
+    y = bxor(y, y <<< 7 &&& 0x9D2C5680)
+    y = bxor(y, y <<< 15 &&& 0xEFC60000)
+    y = bxor(y, y >>> 18)
+
+    {y &&& @uint32_mask, %{rng | index: index + 1}}
+  end
+
+  defp mt19937_twist(%{mt: mt} = rng) do
+    mt =
+      0..(@mt19937_n - 1)
+      |> Enum.reduce(mt, fn i, acc ->
+        x =
+          (elem(acc, i) &&& @mt19937_upper_mask) +
+            (elem(acc, rem(i + 1, @mt19937_n)) &&& @mt19937_lower_mask)
+
+        x_a = x >>> 1
+        x_a = if rem(x, 2) != 0, do: bxor(x_a, @mt19937_matrix_a), else: x_a
+
+        value = bxor(elem(acc, rem(i + @mt19937_m, @mt19937_n)), x_a) &&& @uint32_mask
+        put_elem(acc, i, value)
+      end)
+
+    %{rng | mt: mt, index: 0}
+  end
+
+  defp swap_tuple(tuple, index, index), do: tuple
+
+  defp swap_tuple(tuple, left, right) do
+    left_value = elem(tuple, left)
+    right_value = elem(tuple, right)
+
+    tuple
+    |> put_elem(left, right_value)
+    |> put_elem(right, left_value)
   end
 
   defp validate_split_fractions!(train_frac, validation_frac) do
