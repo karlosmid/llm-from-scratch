@@ -128,7 +128,7 @@ end
 
 defimpl Nx.Container, for: LlmScratch.GPTModel do
   @container_fields [:tok_emb, :pos_emb, :trf_blocks, :final_norm, :out_head]
-  @metadata_fields [:cfg, :drop_emb]
+  @metadata_fields [:cfg, :drop_emb, :trainable]
 
   def traverse(model, acc, fun) do
     {tok_emb, acc} = fun.(model.tok_emb, acc)
@@ -674,13 +674,32 @@ defmodule LlmScratch.Training do
       trainable_tensors(block.norm2)
   end
 
-  defp trainable_tensors(%GPTModel{} = model) do
+  defp trainable_tensors(%GPTModel{trainable: :all} = model) do
     trainable_tensors(model.tok_emb) ++
       trainable_tensors(model.pos_emb) ++
       Enum.flat_map(model.trf_blocks, &trainable_tensors/1) ++
       trainable_tensors(model.final_norm) ++
       dense_tensors(model.out_head, false)
   end
+
+  defp trainable_tensors(%GPTModel{trainable: trainable} = model) when is_list(trainable) do
+    trainable
+    |> Enum.flat_map(&gpt_model_field_tensors(model, &1))
+  end
+
+  defp gpt_model_field_tensors(model, :tok_emb), do: trainable_tensors(model.tok_emb)
+  defp gpt_model_field_tensors(model, :pos_emb), do: trainable_tensors(model.pos_emb)
+
+  defp gpt_model_field_tensors(model, :trf_blocks),
+    do: Enum.flat_map(model.trf_blocks, &trainable_tensors/1)
+
+  defp gpt_model_field_tensors(model, :final_norm), do: trainable_tensors(model.final_norm)
+
+  defp gpt_model_field_tensors(model, :out_head),
+    do: dense_tensors(model.out_head, Map.has_key?(model.out_head, :bias))
+
+  defp gpt_model_field_tensors(model, {:trf_block, index}),
+    do: model.trf_blocks |> Enum.at(index) |> trainable_tensors()
 
   defp dense_tensors(%{kernel: kernel, bias: bias}, true), do: [kernel, bias]
   defp dense_tensors(%{kernel: kernel}, false), do: [kernel]
@@ -729,7 +748,7 @@ defmodule LlmScratch.Training do
     {%{block | att: att, ff: ff, norm1: norm1, norm2: norm2}, tensors}
   end
 
-  defp put_trainable_tensors(%GPTModel{} = model, tensors) do
+  defp put_trainable_tensors(%GPTModel{trainable: :all} = model, tensors) do
     {tok_emb, tensors} = put_trainable_tensors(model.tok_emb, tensors)
     {pos_emb, tensors} = put_trainable_tensors(model.pos_emb, tensors)
     {trf_blocks, tensors} = Enum.map_reduce(model.trf_blocks, tensors, &put_trainable_tensors/2)
@@ -747,6 +766,49 @@ defmodule LlmScratch.Training do
       },
       tensors
     }
+  end
+
+  defp put_trainable_tensors(%GPTModel{trainable: trainable} = model, tensors)
+       when is_list(trainable) do
+    Enum.reduce(trainable, {model, tensors}, fn field, {model, tensors} ->
+      put_gpt_model_field_tensors(model, field, tensors)
+    end)
+  end
+
+  defp put_gpt_model_field_tensors(model, :tok_emb, tensors) do
+    {tok_emb, tensors} = put_trainable_tensors(model.tok_emb, tensors)
+    {%{model | tok_emb: tok_emb}, tensors}
+  end
+
+  defp put_gpt_model_field_tensors(model, :pos_emb, tensors) do
+    {pos_emb, tensors} = put_trainable_tensors(model.pos_emb, tensors)
+    {%{model | pos_emb: pos_emb}, tensors}
+  end
+
+  defp put_gpt_model_field_tensors(model, :trf_blocks, tensors) do
+    {trf_blocks, tensors} = Enum.map_reduce(model.trf_blocks, tensors, &put_trainable_tensors/2)
+    {%{model | trf_blocks: trf_blocks}, tensors}
+  end
+
+  defp put_gpt_model_field_tensors(model, :final_norm, tensors) do
+    {final_norm, tensors} = put_trainable_tensors(model.final_norm, tensors)
+    {%{model | final_norm: final_norm}, tensors}
+  end
+
+  defp put_gpt_model_field_tensors(model, :out_head, tensors) do
+    {out_head, tensors} =
+      put_dense_tensors(model.out_head, Map.has_key?(model.out_head, :bias), tensors)
+
+    {%{model | out_head: out_head}, tensors}
+  end
+
+  defp put_gpt_model_field_tensors(model, {:trf_block, index}, tensors) do
+    {block, tensors} =
+      model.trf_blocks
+      |> Enum.at(index)
+      |> put_trainable_tensors(tensors)
+
+    {%{model | trf_blocks: List.replace_at(model.trf_blocks, index, block)}, tensors}
   end
 
   defp put_dense_tensors(%{kernel: _kernel, bias: _bias} = dense, true, [kernel, bias | rest]) do

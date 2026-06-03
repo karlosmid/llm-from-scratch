@@ -6,6 +6,7 @@ defmodule LlmFromScratch6Test do
     FineTuneDataLoader,
     GPT2OpenAI,
     GPTConfig,
+    GPTModel,
     SpamDataset,
     TextGeneration,
     TextUtils
@@ -210,5 +211,91 @@ defmodule LlmFromScratch6Test do
              "Is the following text 'spam'? Answer with 'yes' or 'no': 'You are a winner you have been specially selected to receive $1000 cash or a $2000 award.'\n\nThe following text 'spam'? Answer with 'yes' or 'no': 'You are a winner"
   end
 
+  @tag :download
+  @tag timeout: 900_000
+  test "6.5 inspects saved GPT-2 small like a PyTorch module tree" do
+    previous_backend = Nx.default_backend()
+    Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
 
+    model = GPT2OpenAI.load_model("124M", models_dir: "gpt2")
+    inspected = inspect(model)
+
+    assert inspected =~ "GPTModel("
+    assert inspected =~ "(tok_emb): Embedding(50257, 768)"
+    assert inspected =~ "(pos_emb): Embedding(1024, 768)"
+    assert inspected =~ "(drop_emb): Dropout(p=0.0, inplace=false)"
+    assert inspected =~ "(trf_blocks): Sequential("
+    assert inspected =~ "(0): TransformerBlock("
+    assert inspected =~ "(11): TransformerBlock("
+    assert inspected =~ "(W_query): Linear(in_features=768, out_features=768, bias=true)"
+    assert inspected =~ "(W_key): Linear(in_features=768, out_features=768, bias=true)"
+    assert inspected =~ "(W_value): Linear(in_features=768, out_features=768, bias=true)"
+    assert inspected =~ "(out_proj): Linear(in_features=768, out_features=768, bias=true)"
+    assert inspected =~ "(0): Linear(in_features=768, out_features=3072, bias=true)"
+    assert inspected =~ "(1): GELU()"
+    assert inspected =~ "(2): Linear(in_features=3072, out_features=768, bias=true)"
+    assert inspected =~ "(norm1): LayerNorm()"
+    assert inspected =~ "(norm2): LayerNorm()"
+    assert inspected =~ "(drop_resid): Dropout(p=0.0, inplace=false)"
+    assert inspected =~ "(final_norm): LayerNorm()"
+    assert inspected =~ "(out_head): Linear(in_features=768, out_features=50257, bias=false)"
+
+    assert Regex.scan(~r/\(\d+\): TransformerBlock\(/, inspected) |> length() == 12
+
+    # by frozing model blocks, we skip their training
+    frozen_model = GPTModel.freeze(model)
+    assert GPTModel.frozen?(frozen_model)
+    assert frozen_model.trainable == []
+
+    # we change output block second dimension to two, as this we have two classes, ham/spam
+    # we want to train final_norm block and last transformer block
+    # Sebastian states that based on his experiments, we will get better results
+    num_classes = 2
+    classification_model =
+      frozen_model
+      |> GPTModel.replace_out_head(num_classes, seed: 123, bias: true)
+      |> GPTModel.set_trainable([:out_head, :final_norm, {:trf_block, 11}])
+
+    assert classification_model.trainable == [:out_head, :final_norm, {:trf_block, 11}]
+
+    assert inspect(classification_model) =~
+             "(out_head): Linear(in_features=768, out_features=2, bias=true)"
+
+    #input message that we want to classify
+    inputs =
+      "Do you have time"
+      |> TextUtils.text_to_token_ids("code-davinci-002")
+      |> Nx.backend_transfer(Nx.BinaryBackend)
+
+    assert Nx.to_list(inputs) == [[5211, 345, 423, 640]]
+    assert Nx.shape(inputs) == {1, 4}
+
+    outputs =
+      classification_model
+      |> GPTModel.forward(Nx.backend_transfer(inputs, EXLA.Backend))
+      |> Nx.backend_transfer(Nx.BinaryBackend)
+
+    assert Nx.shape(outputs) == {1, 4, 2}
+
+    expected_outputs =
+      Nx.tensor([
+        [
+          [0.41287035, 1.2672385],
+          [-3.6814282, 4.7981105],
+          [-3.9752169, 4.006133],
+          [-1.0933434, 3.5170393]
+        ]
+      ])
+
+    assert Nx.all_close(outputs, expected_outputs, atol: 1.0e-5) |> Nx.to_number() == 1
+
+    # it is enough to do fine tune training only for last input token!
+    # Why? Attention mechanism is using casual attention mask, where we hide from current token its next token
+    # Because of that, only the last message token has attention weights of all previous token.
+    last_output_token = outputs[[.., -1, ..]]
+    assert Nx.shape(last_output_token) == {1, 2}
+    assert Nx.all_close(last_output_token, Nx.tensor([[-1.0933434, 3.5170393]]), atol: 1.0e-5)
+           |> Nx.to_number() == 1
+  end
 end

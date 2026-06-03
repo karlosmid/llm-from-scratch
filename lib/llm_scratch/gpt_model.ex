@@ -26,7 +26,18 @@ defmodule LlmScratch.GPTModel do
     TransformerBlock
   }
 
-  defstruct [:cfg, :tok_emb, :pos_emb, :drop_emb, :trf_blocks, :final_norm, :out_head]
+  @trainable_fields [:tok_emb, :pos_emb, :trf_blocks, :final_norm, :out_head]
+
+  defstruct [
+    :cfg,
+    :tok_emb,
+    :pos_emb,
+    :drop_emb,
+    :trf_blocks,
+    :final_norm,
+    :out_head,
+    trainable: :all
+  ]
 
   @type linear_no_bias :: %{kernel: Nx.Tensor.t()}
 
@@ -37,7 +48,8 @@ defmodule LlmScratch.GPTModel do
           drop_emb: float(),
           trf_blocks: [TransformerBlock.t()],
           final_norm: DummyLayerNorm.t(),
-          out_head: linear_no_bias()
+          out_head: linear_no_bias(),
+          trainable: :all | [atom() | {:trf_block, non_neg_integer()}]
         }
 
   @spec new(GPTConfig.t(), keyword()) :: t()
@@ -62,7 +74,113 @@ defmodule LlmScratch.GPTModel do
       drop_emb: GPTConfig.embedding_dropout(cfg),
       trf_blocks: transformer_blocks(cfg, seed + 2, norm_eps),
       final_norm: DummyLayerNorm.new(cfg.emb_dim, eps: norm_eps),
-      out_head: init_out_head(cfg, seed + 2 + cfg.n_layers * 8)
+      out_head: init_out_head(cfg, seed + 2 + cfg.n_layers * 8),
+      trainable: :all
+    }
+  end
+
+  @doc """
+  Freezes all model parameters for fine-tuning workflows.
+
+  Nx tensors do not have a mutable `requires_grad` flag like PyTorch tensors.
+  Instead, this marks the model with an empty trainable layer list. The training
+  optimizer respects that metadata and leaves all existing parameters
+  unchanged.
+
+  Returns an updated `%LlmScratch.GPTModel{}`.
+  """
+  @spec freeze(t()) :: t()
+  def freeze(%__MODULE__{} = model), do: %{model | trainable: []}
+
+  @doc """
+  Restores all model parameters to trainable.
+
+  Returns an updated `%LlmScratch.GPTModel{}` with the default `:all`
+  trainable setting.
+  """
+  @spec unfreeze(t()) :: t()
+  def unfreeze(%__MODULE__{} = model), do: %{model | trainable: :all}
+
+  @doc """
+  Marks selected top-level model layers as trainable.
+
+  ## Parameters
+
+    * `model` - `%LlmScratch.GPTModel{}` to update.
+    * `fields` - list of trainable top-level layer names. Accepted fields are
+      `:tok_emb`, `:pos_emb`, `:trf_blocks`, `:final_norm`, and `:out_head`.
+
+  This is useful after calling `freeze/1`, for example to train only a newly
+  added classification head.
+
+  Returns an updated `%LlmScratch.GPTModel{}`.
+  """
+  @spec set_trainable(t(), [atom()]) :: t()
+  def set_trainable(%__MODULE__{} = model, fields) when is_list(fields) do
+    unknown_fields =
+      Enum.reject(fields, fn
+        field when field in @trainable_fields ->
+          true
+
+        {:trf_block, index} when is_integer(index) and index >= 0 ->
+          index < length(model.trf_blocks)
+
+        _field ->
+          false
+      end)
+
+    if unknown_fields != [] do
+      raise ArgumentError,
+            "unknown trainable GPTModel fields #{inspect(unknown_fields)}; expected one or more of #{inspect(@trainable_fields)} or {:trf_block, index}"
+    end
+
+    %{model | trainable: Enum.uniq(fields)}
+  end
+
+  @doc """
+  Returns `true` when no model parameters are trainable.
+  """
+  @spec frozen?(t()) :: boolean()
+  def frozen?(%__MODULE__{trainable: []}), do: true
+  def frozen?(%__MODULE__{}), do: false
+
+  @doc """
+  Replaces the output head with a dense classification or projection head.
+
+  ## Parameters
+
+    * `model` - `%LlmScratch.GPTModel{}` to update.
+    * `out_features` - number of output logits produced for each token.
+    * `opts` - optional keyword list.
+
+  ## Options
+
+    * `:seed` - deterministic initialization seed. Defaults to `123`.
+    * `:bias` - whether to include a bias vector. Defaults to `true`, matching
+      `torch.nn.Linear/2`.
+
+  ## Output
+
+  Returns an updated model whose `:out_head` has kernel shape
+  `{model.cfg.emb_dim, out_features}` and, when enabled, bias shape
+  `{out_features}`.
+  """
+  @spec replace_out_head(t(), pos_integer(), keyword()) :: t()
+  def replace_out_head(%__MODULE__{} = model, out_features, opts \\ [])
+      when is_integer(out_features) and out_features > 0 and is_list(opts) do
+    seed = Keyword.get(opts, :seed, 123)
+    bias = Keyword.get(opts, :bias, true)
+
+    %{
+      model
+      | out_head:
+          SelfAttentionV2.init_dense_weights(
+            model.cfg.emb_dim,
+            out_features,
+            seed,
+            bias,
+            "out_head"
+          )
     }
   end
 
@@ -215,10 +333,17 @@ defmodule LlmScratch.GPTModel do
     %{kernel: kernel}
   end
 
+  defp linear(x, %{kernel: kernel, bias: bias}), do: Nx.dot(x, [-1], kernel, [0]) |> Nx.add(bias)
   defp linear(x, %{kernel: kernel}), do: Nx.dot(x, [-1], kernel, [0])
 
-  defnp linear_defn(x, %{kernel: kernel}) do
-    Nx.dot(x, [-1], kernel, [0])
+  deftransformp linear_defn(x, layer) do
+    y = Nx.dot(x, [-1], layer.kernel, [0])
+
+    if Map.has_key?(layer, :bias) do
+      Nx.add(y, layer.bias)
+    else
+      y
+    end
   end
 
   deftransformp transformer_blocks_train(blocks, x, key) do
