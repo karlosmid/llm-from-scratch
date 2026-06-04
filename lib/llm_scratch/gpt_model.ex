@@ -40,6 +40,7 @@ defmodule LlmScratch.GPTModel do
   ]
 
   @type linear_no_bias :: %{kernel: Nx.Tensor.t()}
+  @type linear :: linear_no_bias() | %{kernel: Nx.Tensor.t(), bias: Nx.Tensor.t()}
 
   @type t :: %__MODULE__{
           cfg: GPTConfig.t(),
@@ -48,7 +49,7 @@ defmodule LlmScratch.GPTModel do
           drop_emb: float(),
           trf_blocks: [TransformerBlock.t()],
           final_norm: DummyLayerNorm.t(),
-          out_head: linear_no_bias(),
+          out_head: linear(),
           trainable: :all | [atom() | {:trf_block, non_neg_integer()}]
         }
 
@@ -263,7 +264,7 @@ defmodule LlmScratch.GPTModel do
     |> Kernel.+(tensor_parameters(model.pos_emb.weight))
     |> Kernel.+(Enum.reduce(model.trf_blocks, 0, &(&2 + transformer_block_parameters(&1))))
     |> Kernel.+(layer_norm_parameters(model.final_norm))
-    |> Kernel.+(tensor_parameters(model.out_head.kernel))
+    |> Kernel.+(dense_parameters(model.out_head, Map.has_key?(model.out_head, :bias)))
   end
 
   @spec transformer_block_parameters(map()) :: non_neg_integer()

@@ -96,7 +96,7 @@ defmodule LlmScratch.FineTuneDataLoader do
   @spec load_spam_data(Path.t()) :: [spam_record()]
   def load_spam_data(data_file_path) do
     data_file_path
-    |> File.stream!([], :line)
+    |> File.stream!(:line, [])
     |> Stream.map(&String.trim_trailing(&1, "\n"))
     |> Stream.map(&String.trim_trailing(&1, "\r"))
     |> Stream.reject(&(&1 == ""))

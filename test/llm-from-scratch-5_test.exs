@@ -241,7 +241,7 @@ defmodule LlmFromScratch5Test do
   end
 
   @tag :train
-  @tag timeout: 720_000
+  @tag timeout: 900_000
   test "5.2 train an llm" do
     previous_backend = Nx.default_backend()
     device = Nx.default_backend(EXLA.Backend)

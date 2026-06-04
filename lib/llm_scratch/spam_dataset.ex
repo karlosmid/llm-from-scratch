@@ -154,7 +154,7 @@ defmodule LlmScratch.SpamDataset do
 
   defp read_csv!(csv_file) do
     csv_file
-    |> File.stream!([], :line)
+    |> File.stream!(:line, [])
     |> Stream.map(&String.trim_trailing(&1, "\n"))
     |> Stream.map(&String.trim_trailing(&1, "\r"))
     |> Enum.to_list()

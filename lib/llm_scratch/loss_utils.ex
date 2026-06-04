@@ -134,7 +134,7 @@ defmodule LlmScratch.LossUtils do
           nil | :default | atom() | tuple(),
           nil | non_neg_integer()
         ) ::
-          float()
+          float() | :nan
   def calc_loss_loader(data_loader, model, device \\ :default, num_batches \\ nil)
       when is_map(data_loader) and is_struct(model) do
     loader_length = Map.get(data_loader, :length, 0)

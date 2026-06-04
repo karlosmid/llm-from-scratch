@@ -27,7 +27,8 @@ defmodule LlmScratch.MixProject do
       {:nx, "~> 0.6"},
       {:exla, "~> 0.6"},
       {:axon, "~> 0.6"},
-      {:req, "~> 0.4.0"}
+      {:req, "~> 0.4.0"},
+      {:dialyxir, "~> 1.4", only: [:dev], runtime: false}
     ]
   end
 end

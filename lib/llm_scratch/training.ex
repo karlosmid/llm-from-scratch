@@ -233,6 +233,17 @@ defmodule LlmScratch.Training do
               step: 0,
               m: nil,
               v: nil
+
+    @type t :: %__MODULE__{
+            learning_rate: float(),
+            weight_decay: float(),
+            beta1: float(),
+            beta2: float(),
+            eps: float(),
+            step: non_neg_integer(),
+            m: nil | [Nx.Tensor.t()],
+            v: nil | [Nx.Tensor.t()]
+          }
   end
 
   @type optimizer :: %AdamW{} | (struct(), struct() -> struct())
@@ -679,7 +690,7 @@ defmodule LlmScratch.Training do
       trainable_tensors(model.pos_emb) ++
       Enum.flat_map(model.trf_blocks, &trainable_tensors/1) ++
       trainable_tensors(model.final_norm) ++
-      dense_tensors(model.out_head, false)
+      dense_tensors(model.out_head, Map.has_key?(model.out_head, :bias))
   end
 
   defp trainable_tensors(%GPTModel{trainable: trainable} = model) when is_list(trainable) do
@@ -753,7 +764,8 @@ defmodule LlmScratch.Training do
     {pos_emb, tensors} = put_trainable_tensors(model.pos_emb, tensors)
     {trf_blocks, tensors} = Enum.map_reduce(model.trf_blocks, tensors, &put_trainable_tensors/2)
     {final_norm, tensors} = put_trainable_tensors(model.final_norm, tensors)
-    {out_head, tensors} = put_dense_tensors(model.out_head, false, tensors)
+    {out_head, tensors} =
+      put_dense_tensors(model.out_head, Map.has_key?(model.out_head, :bias), tensors)
 
     {
       %{

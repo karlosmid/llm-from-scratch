@@ -58,6 +58,11 @@ defmodule LlmScratch.MultiheadAttention do
   ]
 
   @type dense_weights :: %{kernel: Nx.Tensor.t(), bias: Nx.Tensor.t()}
+  @type dropout_config :: %{
+          required(:dropout) => number(),
+          optional(:seed) => integer(),
+          optional(atom()) => term()
+        }
 
   @type t :: %__MODULE__{
           w_q: dense_weights(),
@@ -313,7 +318,7 @@ defmodule LlmScratch.MultiheadAttention do
   """
   @spec maybe_dropout(
           Nx.Tensor.t(),
-          %{required(:dropout) => number(), optional(:seed) => integer()},
+          t() | dropout_config(),
           keyword()
         ) ::
           Nx.Tensor.t()
@@ -325,10 +330,7 @@ defmodule LlmScratch.MultiheadAttention do
 
     if mode == :train do
       key = Keyword.get(opts, :key) || Nx.Random.key(seed)
-
-      %Axon.StatefulOutput{output: dropped, state: %{"key" => _new_key}} =
-        Axon.Layers.dropout(x, key, rate: dropout, mode: :train)
-
+      {dropped, _key} = dropout_defn(x, dropout, key)
       dropped
     else
       x
