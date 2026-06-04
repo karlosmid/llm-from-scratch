@@ -7,6 +7,8 @@ defmodule LlmFromScratch6Test do
     GPT2OpenAI,
     GPTConfig,
     GPTModel,
+    LossClassificationUtils,
+    LossUtils,
     SpamDataset,
     TextGeneration,
     TextUtils
@@ -297,5 +299,66 @@ defmodule LlmFromScratch6Test do
     assert Nx.shape(last_output_token) == {1, 2}
     assert Nx.all_close(last_output_token, Nx.tensor([[-1.0933434, 3.5170393]]), atol: 1.0e-5)
            |> Nx.to_number() == 1
+  end
+
+  @tag :download
+  @tag timeout: 900_000
+  test "6.6 calculates classification accuracy before fine-tuning" do
+    previous_backend = Nx.default_backend()
+    device = Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    tokenizer = "code-davinci-002"
+
+    train_dataset = SpamDataset.new("train.csv", tokenizer, max_length: nil)
+
+    val_dataset =
+      SpamDataset.new("validation.csv", tokenizer, max_length: train_dataset.max_length)
+
+    test_dataset =
+      SpamDataset.new("test.csv", tokenizer, max_length: train_dataset.max_length)
+
+    batch_size = 8
+    :rand.seed(:exsss, {123, 123, 123})
+
+    train_loader =
+      train_dataset
+      |> dataset_samples()
+      |> DataLoader.new(batch_size: batch_size, shuffle: true, num_workers: 0, drop_last: true)
+
+    val_loader =
+      val_dataset
+      |> dataset_samples()
+      |> DataLoader.new(batch_size: batch_size, num_workers: 0, drop_last: false)
+
+    test_loader =
+      test_dataset
+      |> dataset_samples()
+      |> DataLoader.new(batch_size: batch_size, num_workers: 0, drop_last: false)
+
+    model =
+      "124M"
+      |> GPT2OpenAI.load_model(models_dir: "gpt2")
+      |> GPTModel.freeze()
+      |> GPTModel.replace_out_head(2, seed: 123, bias: true)
+      |> GPTModel.set_trainable([:out_head, :final_norm, {:trf_block, 11}])
+
+    # returns the number of correctly predicted classification divided with number of messages in a batch
+    train_accuracy = LossClassificationUtils.calc_accuracy_loader(train_loader, model, device, 10)
+    val_accuracy = LossClassificationUtils.calc_accuracy_loader(val_loader, model, device, 10)
+    test_accuracy = LossClassificationUtils.calc_accuracy_loader(test_loader, model, device, 10)
+
+    train_loss = LossUtils.calc_loss_loader(train_loader, model, device, 10, target: :last_token)
+    val_loss = LossUtils.calc_loss_loader(val_loader, model, device, 10, target: :last_token)
+    test_loss = LossUtils.calc_loss_loader(test_loader, model, device, 10, target: :last_token)
+
+    # we have almost 50:50 chance for ham/spam, as we still have not trained our model for classification
+    assert train_accuracy == 0.5125
+    assert val_accuracy == 0.525
+    assert test_accuracy == 0.5625
+
+    assert_in_delta train_loss, 1.5194151997566223, 1.0e-6
+    assert_in_delta val_loss, 1.4858015120029449, 1.0e-6
+    assert_in_delta test_loss, 1.3634233981370927, 1.0e-6
   end
 end
