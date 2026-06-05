@@ -26,6 +26,7 @@ defmodule LlmScratch.MixProject do
       {:pythonx, "~> 0.4.0"},
       {:nx, "~> 0.6"},
       {:exla, "~> 0.6"},
+      {:emlx, github: "elixir-nx/emlx", branch: "main", subdir: "emlx", only: [:dev, :test]},
       {:axon, "~> 0.6"},
       {:req, "~> 0.4.0"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false}

@@ -2,6 +2,7 @@ defmodule LlmFromScratch5Test do
   use ExUnit.Case
 
   alias LlmScratch.{
+    EMLXBackend,
     GPTConfig,
     GPT2OpenAI,
     GPTModel,
@@ -240,12 +241,12 @@ defmodule LlmFromScratch5Test do
     assert_in_delta val_loss, 10.995487, 1.0e-5
   end
 
+  @tag :emlx
   @tag :train
   @tag timeout: 900_000
   test "5.2 train an llm" do
-    previous_backend = Nx.default_backend()
-    device = Nx.default_backend(EXLA.Backend)
-    on_exit(fn -> Nx.default_backend(previous_backend) end)
+    context = EMLXBackend.apple_gpu_or_exla!()
+    on_exit(fn -> EMLXBackend.restore!(context) end)
 
     file_content = File.read!("the-verdict.txt")
     train_ratio = 0.90
@@ -299,7 +300,7 @@ defmodule LlmFromScratch5Test do
         train_loader,
         val_loader,
         optimizer,
-        device,
+        context.backend,
         10,
         5,
         5,
@@ -827,7 +828,8 @@ defmodule LlmFromScratch5Test do
       |> Nx.backend_transfer(Nx.BinaryBackend)
       |> TextUtils.token_ids_to_text(tokenizer)
 
-    assert text == "Every effort moves you farther and farther closer to it. I don't need to try all their tricks.\n\n\n(END OF TRANSCRIPT"
+    assert text ==
+             "Every effort moves you farther and farther closer to it. I don't need to try all their tricks.\n\n\n(END OF TRANSCRIPT"
   end
 
   defp assert_close(actual, expected, opts) do

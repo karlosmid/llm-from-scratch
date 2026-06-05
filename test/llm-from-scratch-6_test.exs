@@ -3,6 +3,7 @@ defmodule LlmFromScratch6Test do
 
   alias LlmScratch.{
     DataLoader,
+    EMLXBackend,
     FineTuneDataLoader,
     GPT2OpenAI,
     GPTConfig,
@@ -373,12 +374,13 @@ defmodule LlmFromScratch6Test do
   end
 
   @tag :download
+  @tag :emlx
   @tag :train
   @tag timeout: 3_600_000
   test "6.7 fine-tunes classifier on spam dataset" do
-    previous_backend = Nx.default_backend()
-    device = Nx.default_backend(EXLA.Backend)
-    on_exit(fn -> Nx.default_backend(previous_backend) end)
+    context = EMLXBackend.apple_gpu_or_exla!()
+    device = context.backend
+    on_exit(fn -> EMLXBackend.restore!(context) end)
 
     tokenizer = &gpt2_compatible_token_ids/1
 
