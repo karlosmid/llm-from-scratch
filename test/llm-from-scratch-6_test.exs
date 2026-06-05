@@ -1,9 +1,10 @@
 defmodule LlmFromScratch6Test do
   use ExUnit.Case
 
+  import LlmScratch.TestHelpers
+
   alias LlmScratch.{
     DataLoader,
-    EMLXBackend,
     FineTuneDataLoader,
     GPT2OpenAI,
     GPTConfig,
@@ -62,23 +63,6 @@ defmodule LlmFromScratch6Test do
     assert File.exists?("train.csv")
     assert File.exists?("validation.csv")
     assert File.exists?("test.csv")
-  end
-
-  defp write_csv!(path, records) do
-    rows =
-      records
-      |> Enum.map(fn record ->
-        [csv_field(record.label), ",", csv_field(record.text), "\n"]
-      end)
-
-    File.write!(path, ["Label,Text\n", rows])
-  end
-
-  defp csv_field(value) do
-    value
-    |> to_string()
-    |> String.replace("\"", "\"\"")
-    |> then(&"\"#{&1}\"")
   end
 
   test "6.3 creating data loaders" do
@@ -142,32 +126,10 @@ defmodule LlmFromScratch6Test do
     assert test_loader.length == 38
   end
 
-  defp dataset_samples(dataset) do
-    0..(SpamDataset.length(dataset) - 1)
-    |> Enum.map(&SpamDataset.get(dataset, &1))
-  end
-
-  defp collate_batch(batch) do
-    {inputs, labels} = Enum.unzip(batch)
-
-    {
-      Nx.stack(inputs),
-      Nx.stack(labels)
-    }
-  end
-
-  defp gpt2_compatible_token_ids(text) do
-    {:ok, token_ids} = Tiktoken.encode("code-davinci-002", text, ["<|endoftext|>"])
-
-    Enum.map(token_ids, &min(&1, 50_256))
-  end
-
   @tag :download
   @tag timeout: 900_000
   test "6.4 loads OpenAI GPT-2 and generates classification prompts" do
-    previous_backend = Nx.default_backend()
-    Nx.default_backend(EXLA.Backend)
-    on_exit(fn -> Nx.default_backend(previous_backend) end)
+    use_accelerated_backend()
 
     choose_model = "gpt2-small (124M)"
     tokenizer = "code-davinci-002"
@@ -225,9 +187,7 @@ defmodule LlmFromScratch6Test do
   @tag :download
   @tag timeout: 900_000
   test "6.5 inspects saved GPT-2 small like a PyTorch module tree" do
-    previous_backend = Nx.default_backend()
-    Nx.default_backend(EXLA.Backend)
-    on_exit(fn -> Nx.default_backend(previous_backend) end)
+    device = use_accelerated_backend()
 
     model = GPT2OpenAI.load_model("124M", models_dir: "gpt2")
     inspected = inspect(model)
@@ -285,7 +245,7 @@ defmodule LlmFromScratch6Test do
 
     outputs =
       classification_model
-      |> GPTModel.forward(Nx.backend_transfer(inputs, EXLA.Backend))
+      |> GPTModel.forward(Nx.backend_transfer(inputs, device))
       |> Nx.backend_transfer(Nx.BinaryBackend)
 
     assert Nx.shape(outputs) == {1, 4, 2}
@@ -315,9 +275,7 @@ defmodule LlmFromScratch6Test do
   @tag :download
   @tag timeout: 900_000
   test "6.6 calculates classification accuracy before fine-tuning" do
-    previous_backend = Nx.default_backend()
-    device = Nx.default_backend(EXLA.Backend)
-    on_exit(fn -> Nx.default_backend(previous_backend) end)
+    device = use_accelerated_backend()
 
     tokenizer = &gpt2_compatible_token_ids/1
 
@@ -378,9 +336,7 @@ defmodule LlmFromScratch6Test do
   @tag :train
   @tag timeout: 3_600_000
   test "6.7 fine-tunes classifier on spam dataset" do
-    context = EMLXBackend.apple_gpu_or_exla!()
-    device = context.backend
-    on_exit(fn -> EMLXBackend.restore!(context) end)
+    device = use_accelerated_backend()
 
     tokenizer = &gpt2_compatible_token_ids/1
 
@@ -454,46 +410,5 @@ defmodule LlmFromScratch6Test do
     assert examples_seen == train_loader.length * batch_size * num_epochs
     assert Enum.all?(train_losses ++ val_losses, &is_float/1)
     assert Enum.all?(train_accs ++ val_accs, &(&1 >= 0.0 and &1 <= 1.0))
-  end
-
-  defp write_training_metrics!(
-         path,
-         num_epochs,
-         examples_seen,
-         train_losses,
-         val_losses,
-         train_accs,
-         val_accs
-       ) do
-    metrics = %{
-      num_epochs: num_epochs,
-      examples_seen: examples_seen,
-      losses: %{
-        epochs_seen: linspace(0.0, num_epochs * 1.0, length(train_losses)),
-        examples_seen: linspace(0.0, examples_seen * 1.0, length(train_losses)),
-        train_values: train_losses,
-        val_values: val_losses
-      },
-      accuracies: %{
-        epochs_seen: linspace(1.0, num_epochs * 1.0, length(train_accs)),
-        examples_seen:
-          linspace(examples_seen / num_epochs, examples_seen * 1.0, length(train_accs)),
-        train_values: train_accs,
-        val_values: val_accs
-      }
-    }
-
-    {:ok, encoded_metrics} = Jason.encode(metrics, pretty: true)
-    File.write!(path, encoded_metrics)
-  end
-
-  defp linspace(_start, stop, 1), do: [stop * 1.0]
-
-  defp linspace(start, stop, count) do
-    step = (stop - start) / (count - 1)
-
-    Enum.map(0..(count - 1), fn index ->
-      start + index * step
-    end)
   end
 end

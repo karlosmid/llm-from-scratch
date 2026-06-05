@@ -1,6 +1,8 @@
 defmodule LlmFromScratch4Test do
   use ExUnit.Case
 
+  import LlmScratch.TestHelpers
+
   alias LlmScratch.{
     DummyGPTModel,
     DummyLayerNorm,
@@ -15,9 +17,7 @@ defmodule LlmFromScratch4Test do
   }
 
   test "dummy GPT model returns logits for GPT-2 tokenized batch" do
-    previous_backend = Nx.default_backend()
-    Nx.default_backend(EXLA.Backend)
-    on_exit(fn -> Nx.default_backend(previous_backend) end)
+    use_accelerated_backend()
 
     gpt_config_124m = %GPTConfig{
       vocab_size: 50_257,
@@ -80,13 +80,6 @@ defmodule LlmFromScratch4Test do
       0.23288659751415253,
       -0.6968441009521484
     ])
-  end
-
-  defp assert_close(actual, expected, opts \\ []) do
-    atol = Keyword.get(opts, :atol, 1.0e-6)
-    expected = Nx.tensor(expected, type: {:f, 32})
-
-    assert Nx.all_close(actual, expected, atol: atol) |> Nx.to_number() == 1
   end
 
   test "simple gradient example matches book data" do
@@ -158,10 +151,8 @@ defmodule LlmFromScratch4Test do
     assert_close(FeedForward.call(feed_forward, x), y)
   end
 
-  test "feed forward preserves GPT-124M hidden state shape with EXLA" do
-    previous_backend = Nx.default_backend()
-    Nx.default_backend(EXLA.Backend)
-    on_exit(fn -> Nx.default_backend(previous_backend) end)
+  test "feed forward preserves GPT-124M hidden state shape with accelerated backend" do
+    use_accelerated_backend()
 
     gpt_config_124m = %GPTConfig{
       vocab_size: 50_257,
@@ -236,9 +227,7 @@ defmodule LlmFromScratch4Test do
   end
 
   test "transformer block preserves GPT-124M hidden state shape" do
-    previous_backend = Nx.default_backend()
-    Nx.default_backend(EXLA.Backend)
-    on_exit(fn -> Nx.default_backend(previous_backend) end)
+    use_accelerated_backend()
 
     gpt_config_124m = %GPTConfig{
       vocab_size: 50_257,
@@ -259,9 +248,7 @@ defmodule LlmFromScratch4Test do
   end
 
   test "GPT-124M model returns logits for input batch" do
-    previous_backend = Nx.default_backend()
-    Nx.default_backend(EXLA.Backend)
-    on_exit(fn -> Nx.default_backend(previous_backend) end)
+    use_accelerated_backend()
 
     gpt_config_124m = %GPTConfig{
       vocab_size: 50_257,
@@ -312,9 +299,7 @@ defmodule LlmFromScratch4Test do
   end
 
   test "exercise 4.1 compares feed forward and multi-head attention parameter counts" do
-    previous_backend = Nx.default_backend()
-    Nx.default_backend(EXLA.Backend)
-    on_exit(fn -> Nx.default_backend(previous_backend) end)
+    use_accelerated_backend()
 
     gpt_config_124m = %GPTConfig{
       vocab_size: 50_257,
@@ -392,9 +377,7 @@ defmodule LlmFromScratch4Test do
   end
 
   test "generate_text_simple generates text from a GPT-124M start context" do
-    previous_backend = Nx.default_backend()
-    Nx.default_backend(EXLA.Backend)
-    on_exit(fn -> Nx.default_backend(previous_backend) end)
+    use_accelerated_backend()
 
     gpt_config_124m = %GPTConfig{
       vocab_size: 50_257,

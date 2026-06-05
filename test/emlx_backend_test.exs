@@ -1,7 +1,9 @@
 defmodule LlmScratch.EMLXBackendTest do
   use ExUnit.Case
 
-  alias LlmScratch.{EMLXBackend, GPTConfig, GPTModel, LossUtils, Training}
+  import LlmScratch.TestHelpers
+
+  alias LlmScratch.{EMLXBackend, GPTModel, LossUtils, Training}
 
   defmodule DefnSmoke do
     import Nx.Defn
@@ -106,29 +108,5 @@ defmodule LlmScratch.EMLXBackendTest do
       IO.puts("Skipping EMLX GPT smoke test because EMLX is not supported.")
       assert true
     end
-  end
-
-  defp tiny_gpt_config do
-    %GPTConfig{
-      vocab_size: 32,
-      context_length: 8,
-      emb_dim: 8,
-      n_heads: 1,
-      n_layers: 0,
-      drop_rate: 0.0,
-      qkv_bias: false
-    }
-  end
-
-  defp tiny_input_batch do
-    [[1, 2, 3, 4], [4, 3, 2, 1]]
-    |> Nx.tensor(type: {:s, 64})
-    |> Nx.backend_transfer(Nx.BinaryBackend)
-  end
-
-  defp tiny_target_batch do
-    [[2, 3, 4, 5], [3, 2, 1, 0]]
-    |> Nx.tensor(type: {:s, 64})
-    |> Nx.backend_transfer(Nx.BinaryBackend)
   end
 end

@@ -1,6 +1,8 @@
 defmodule LlmScratch.ModelCheckpointTest do
   use ExUnit.Case
 
+  import LlmScratch.TestHelpers
+
   alias LlmScratch.{GPTConfig, GPTModel, ModelCheckpoint, Training}
 
   test "saves and loads a GPT model" do
@@ -78,17 +80,5 @@ defmodule LlmScratch.ModelCheckpointTest do
     loaded_state = ModelCheckpoint.load_training_state!(path)
 
     assert %Training.AdamW{m: nil, v: nil, step: 0} = loaded_state.optimizer_state_dict
-  end
-
-  defp small_gpt_config do
-    %GPTConfig{
-      vocab_size: 16,
-      context_length: 4,
-      emb_dim: 8,
-      n_heads: 2,
-      n_layers: 1,
-      drop_rate: 0.0,
-      qkv_bias: false
-    }
   end
 end

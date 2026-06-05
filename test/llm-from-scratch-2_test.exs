@@ -1,13 +1,7 @@
 defmodule LlmFromScratch2Test do
   use ExUnit.Case
 
-  # Helper function to decode a list of tokens to their corresponding text pieces
-  defp decode_token_pieces(model, tokens) do
-    Enum.map(tokens, fn token ->
-      {:ok, text_piece} = Tiktoken.decode(model, [token])
-      text_piece
-    end)
-  end
+  import LlmScratch.TestHelpers
 
   setup do
     model = "gpt-4"
@@ -695,9 +689,7 @@ defmodule LlmFromScratch2Test do
   end
 
   test "positional embedding" do
-    previous_backend = Nx.default_backend()
-    Nx.default_backend(EXLA.Backend)
-    on_exit(fn -> Nx.default_backend(previous_backend) end)
+    use_accelerated_backend()
 
     vocab_size = 50257
     embedding_dim = 256

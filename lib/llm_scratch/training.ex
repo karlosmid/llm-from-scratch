@@ -513,7 +513,12 @@ defmodule LlmScratch.Training do
         # Accuracy is non-differentiable, so it is only measured after the epoch
         # with the current model parameters.
         train_accuracy =
-          LossClassificationUtils.calc_accuracy_loader(train_loader, state.model, device, eval_iter)
+          LossClassificationUtils.calc_accuracy_loader(
+            train_loader,
+            state.model,
+            device,
+            eval_iter
+          )
 
         val_accuracy =
           LossClassificationUtils.calc_accuracy_loader(val_loader, state.model, device, eval_iter)
@@ -625,7 +630,7 @@ defmodule LlmScratch.Training do
       |> TextGeneration.generate_text_simple(idx, 50, context_size)
       |> Nx.backend_transfer(Nx.BinaryBackend)
 
-    text = TextUtils.token_ids_to_text(generated, tokenizer)
+    text = TextUtils.token_ids_to_text_lossy(generated, tokenizer)
     IO.puts(text)
     text
   end
@@ -1010,6 +1015,7 @@ defmodule LlmScratch.Training do
     {pos_emb, tensors} = put_trainable_tensors(model.pos_emb, tensors)
     {trf_blocks, tensors} = Enum.map_reduce(model.trf_blocks, tensors, &put_trainable_tensors/2)
     {final_norm, tensors} = put_trainable_tensors(model.final_norm, tensors)
+
     {out_head, tensors} =
       put_dense_tensors(model.out_head, Map.has_key?(model.out_head, :bias), tensors)
 

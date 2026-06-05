@@ -1,6 +1,8 @@
 defmodule LlmFromScratch3Test do
   use ExUnit.Case
 
+  import LlmScratch.TestHelpers
+
   test "simple self-attention mechanism" do
     # our input has 6 tokens Your journey starts with one step. Each token has 3 dimensions.
 
@@ -157,11 +159,6 @@ defmodule LlmFromScratch3Test do
     assert Nx.all_close(context_vec_2, expected_context_vec_2, atol: 1.0e-6) |> Nx.to_number() ==
              1,
            "Context vector should match expected values exactly"
-  end
-
-  defp softmax_naive(%Nx.Tensor{} = x) do
-    exp_x = Nx.exp(x)
-    Nx.divide(exp_x, Nx.sum(exp_x, axes: [0]))
   end
 
   test "attention weights for all tokens" do
@@ -1318,9 +1315,7 @@ defmodule LlmFromScratch3Test do
   end
 
   test "exercise 3.3 initializes a GPT-2 small attention module" do
-    previous_backend = Nx.default_backend()
-    Nx.default_backend(EXLA.Backend)
-    on_exit(fn -> Nx.default_backend(previous_backend) end)
+    use_accelerated_backend()
 
     mha = LlmScratch.MultiheadAttention.new(768, 768, 1024, 0.0, 12, false, seed: 123)
 
