@@ -1,0 +1,145 @@
+# LLM from Scratch 6 Classifier Metrics
+
+```elixir
+project_path = Path.expand("..", __DIR__)
+
+Mix.install(
+  [
+    {:jason, "~> 1.4"},
+    {:kino, "~> 0.12"},
+    {:kino_vega_lite, "~> 0.1.11"},
+    {:vega_lite, "~> 0.1.9"}
+  ],
+  consolidate_protocols: false
+)
+```
+
+## Load metrics
+
+Run test `6.7` first to generate `ch6_spam_classifier_training_metrics.json`.
+
+```elixir
+metrics_path = Path.join(project_path, "ch6_spam_classifier_training_metrics.json")
+
+unless File.exists?(metrics_path) do
+  raise """
+  Expected classifier training metrics at #{metrics_path}.
+
+  Generate it with:
+
+      mix test test/llm-from-scratch-6_test.exs --only train
+  """
+end
+
+metrics =
+  metrics_path
+  |> File.read!()
+  |> Jason.decode!()
+
+%{
+  metrics_path: metrics_path,
+  num_epochs: metrics["num_epochs"],
+  examples_seen: metrics["examples_seen"],
+  loss_points: length(metrics["losses"]["train_values"]),
+  accuracy_points: length(metrics["accuracies"]["train_values"])
+}
+```
+
+## Plot values
+
+```elixir
+alias VegaLite, as: Vl
+
+defmodule ClassifierPlot do
+  def plot_values(epochs_seen, examples_seen, train_values, val_values, label \\ "loss") do
+    value_key = String.to_atom(label)
+
+    value_data =
+      [
+        {"Training #{label}", train_values},
+        {"Validation #{label}", val_values}
+      ]
+      |> Enum.flat_map(fn {series, values} ->
+        Enum.zip([epochs_seen, examples_seen, values])
+        |> Enum.map(fn {epoch, examples, value} ->
+          %{
+            value_key => value,
+            series: series,
+            epoch: epoch,
+            examples_seen: examples
+          }
+        end)
+      end)
+
+    examples_axis_data =
+      Enum.zip([epochs_seen, examples_seen, train_values])
+      |> Enum.map(fn {epoch, examples, value} ->
+        %{
+          value_key => value,
+          epoch: epoch,
+          examples_seen: examples
+        }
+      end)
+
+    # The first layer draws the visible train/validation curves against epochs.
+    epoch_layer =
+      Vl.new()
+      |> Vl.data_from_values(value_data)
+      |> Vl.mark(:line)
+      |> Vl.encode_field(:x, "epoch",
+        type: :quantitative,
+        title: "Epochs",
+        axis: [tick_min_step: 1]
+      )
+      |> Vl.encode_field(:y, label, type: :quantitative, title: String.capitalize(label))
+      |> Vl.encode_field(:color, "series", type: :nominal, title: nil)
+      |> Vl.encode_field(:stroke_dash, "series", type: :nominal, title: nil)
+
+    # The second layer is invisible; it aligns a top x-axis with the same y-scale
+    # so we can read progress as examples seen.
+    examples_layer =
+      Vl.new()
+      |> Vl.data_from_values(examples_axis_data)
+      |> Vl.mark(:line, opacity: 0)
+      |> Vl.encode_field(:x, "examples_seen",
+        type: :quantitative,
+        title: "Examples seen",
+        axis: [orient: "top"]
+      )
+      |> Vl.encode_field(:y, label, type: :quantitative, title: String.capitalize(label))
+
+    Vl.new(width: 500, height: 300)
+    |> Vl.layers([epoch_layer, examples_layer])
+    |> Vl.resolve(:scale, x: :independent, y: :shared)
+    |> Kino.VegaLite.new()
+  end
+end
+```
+
+## Loss plot
+
+```elixir
+losses = metrics["losses"]
+
+ClassifierPlot.plot_values(
+  losses["epochs_seen"],
+  losses["examples_seen"],
+  losses["train_values"],
+  losses["val_values"],
+  "loss"
+)
+```
+
+## Accuracy plot
+
+```elixir
+accuracies = metrics["accuracies"]
+
+ClassifierPlot.plot_values(
+  accuracies["epochs_seen"],
+  accuracies["examples_seen"],
+  accuracies["train_values"],
+  accuracies["val_values"],
+  "accuracy"
+)
+```

@@ -69,6 +69,8 @@ Thumbs.db
 # Ignore generated model checkpoints
 /ch5_2_gpt_124m.nx
 /ch5_2_gpt_124m.nx.gz
+/ch6_spam_classifier_model_and_optimizer.nx
+/ch6_spam_classifier_training_metrics.json
 /*.nx
 /*.nx.gz
 

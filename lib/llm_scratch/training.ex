@@ -184,7 +184,7 @@ defmodule LlmScratch.Training do
 
   import Nx.Defn
 
-  alias LlmScratch.{GPTModel, LossUtils, TextGeneration, TextUtils}
+  alias LlmScratch.{GPTModel, LossClassificationUtils, LossUtils, TextGeneration, TextUtils}
 
   defmodule AdamW do
     @moduledoc """
@@ -413,6 +413,136 @@ defmodule LlmScratch.Training do
     end
   end
 
+  @spec train_classifier_simple(
+          struct(),
+          map(),
+          map(),
+          optimizer(),
+          nil | :default | atom() | tuple(),
+          non_neg_integer(),
+          pos_integer(),
+          pos_integer(),
+          keyword()
+        ) ::
+          {struct(), [float()], [float()], [float()], [float()], non_neg_integer()}
+          | {struct(), optimizer(), [float()], [float()], [float()], [float()], non_neg_integer()}
+  @doc """
+  Trains a GPT-style sequence classifier with a simple batch loop.
+
+  This mirrors the book's `train_classifier_simple` Python example. The Python
+  model is mutated in place, but Elixir data is immutable, so the updated model
+  is returned.
+
+  ## Parameters
+
+    * `model` - classifier model whose trainable tensors can be traversed by
+      `Nx.Container`. For GPT classification, this is typically a frozen GPT
+      model with a 2-class output head and selected layers marked trainable.
+    * `train_loader` - training data loader map with `:stream`, `:batches`, and
+      `:length`.
+    * `val_loader` - validation data loader map with `:stream`, `:batches`, and
+      `:length`.
+    * `optimizer` - either `Training.adamw/2` output or a two-argument function
+      `(model, gradients -> updated_model)`.
+    * `device` - Nx backend target. Use `:default` or `nil` to keep tensors on
+      their current backend.
+    * `num_epochs` - number of full passes over `train_loader`.
+    * `eval_freq` - evaluate loss every `eval_freq` global training steps.
+    * `eval_iter` - maximum number of batches from each loader used for loss and
+      accuracy evaluation.
+    * `opts` - optional settings:
+      * `:return_optimizer` - when `true`, include final optimizer state in the
+        returned tuple.
+
+  ## Returns
+
+    * `{model, train_losses, val_losses, train_accs, val_accs, examples_seen}` by
+      default.
+    * `{model, optimizer, train_losses, val_losses, train_accs, val_accs,
+      examples_seen}` when `return_optimizer: true`.
+
+  `train_losses` and `val_losses` are captured at `eval_freq` intervals.
+  `train_accs` and `val_accs` are captured once after each epoch. The final
+  `examples_seen` count tracks training examples rather than token counts.
+  """
+  def train_classifier_simple(
+        model,
+        train_loader,
+        val_loader,
+        optimizer,
+        device,
+        num_epochs,
+        eval_freq,
+        eval_iter,
+        opts \\ []
+      ) do
+    # Classifier training still uses dropout in train mode, so we thread an
+    # explicit RNG key through every batch.
+    key =
+      System.unique_integer([:positive])
+      |> Nx.Random.key()
+      |> maybe_transfer_tensor(device)
+
+    # State carries immutable model/optimizer updates plus the metrics collected
+    # during training.
+    state = %{
+      model: maybe_transfer_model(model, device),
+      optimizer: optimizer,
+      key: key,
+      train_losses: [],
+      val_losses: [],
+      train_accs: [],
+      val_accs: [],
+      examples_seen: 0,
+      global_step: -1
+    }
+
+    state =
+      Enum.reduce(1..num_epochs//1, state, fn epoch, state ->
+        state =
+          train_classifier_epoch(
+            state,
+            train_loader,
+            val_loader,
+            device,
+            epoch,
+            eval_freq,
+            eval_iter
+          )
+
+        # Accuracy is non-differentiable, so it is only measured after the epoch
+        # with the current model parameters.
+        train_accuracy =
+          LossClassificationUtils.calc_accuracy_loader(train_loader, state.model, device, eval_iter)
+
+        val_accuracy =
+          LossClassificationUtils.calc_accuracy_loader(val_loader, state.model, device, eval_iter)
+
+        IO.puts(
+          "Training accuracy: #{format_percent(train_accuracy)}% | " <>
+            "Validation accuracy: #{format_percent(val_accuracy)}%"
+        )
+
+        %{
+          state
+          | train_accs: [train_accuracy | state.train_accs],
+            val_accs: [val_accuracy | state.val_accs]
+        }
+      end)
+
+    train_losses = Enum.reverse(state.train_losses)
+    val_losses = Enum.reverse(state.val_losses)
+    train_accs = Enum.reverse(state.train_accs)
+    val_accs = Enum.reverse(state.val_accs)
+
+    if Keyword.get(opts, :return_optimizer, false) do
+      {state.model, state.optimizer, train_losses, val_losses, train_accs, val_accs,
+       state.examples_seen}
+    else
+      {state.model, train_losses, val_losses, train_accs, val_accs, state.examples_seen}
+    end
+  end
+
   @doc """
   Calculates training and validation losses for a fixed number of batches.
 
@@ -437,6 +567,29 @@ defmodule LlmScratch.Training do
     {
       LossUtils.calc_loss_loader(train_loader, model, device, eval_iter),
       LossUtils.calc_loss_loader(val_loader, model, device, eval_iter)
+    }
+  end
+
+  @doc """
+  Calculates classifier training and validation losses for fixed batch counts.
+
+  ## Parameters
+
+    * `model` - classifier model used for inference.
+    * `train_loader` - training data loader map with `:stream` and `:length`.
+    * `val_loader` - validation data loader map with `:stream` and `:length`.
+    * `device` - Nx backend target passed through to `LossUtils.calc_loss_loader/5`.
+    * `eval_iter` - maximum number of batches evaluated from each loader.
+
+  ## Returns
+
+    * `{train_loss, val_loss}` as floats. The loss is computed from final-token
+      logits via `target: :last_token`.
+  """
+  def evaluate_classifier_model(model, train_loader, val_loader, device, eval_iter) do
+    {
+      LossUtils.calc_loss_loader(train_loader, model, device, eval_iter, target: :last_token),
+      LossUtils.calc_loss_loader(val_loader, model, device, eval_iter, target: :last_token)
     }
   end
 
@@ -508,6 +661,99 @@ defmodule LlmScratch.Training do
       )
 
     {loss, gradients, key}
+  end
+
+  @doc """
+  Computes classifier loss and gradients for one input/target batch.
+
+  ## Parameters
+
+    * `model` - classifier model whose trainable tensors implement
+      `Nx.Container`.
+    * `input_batch` - token id tensor shaped `{batch_size, seq_len}`.
+    * `target_batch` - class label tensor shaped `{batch_size}`.
+    * `key` - `Nx.Random` key used for dropout.
+
+  ## Returns
+
+    * `{loss, gradients, key}` where `loss` is cross entropy over final-token
+      logits, `gradients` matches the model structure, and `key` is the advanced
+      dropout RNG key.
+  """
+  defn classifier_loss_and_grad(model, input_batch, target_batch, key) do
+    {{loss, key}, {gradients, _input_gradients, _target_gradients, _key_gradients}} =
+      value_and_grad(
+        {model, input_batch, target_batch, key},
+        fn {model, input_batch, target_batch, key} ->
+          {logits, key} = GPTModel.train(model, input_batch, key)
+          logits = logits[[.., -1, ..]]
+          {LossUtils.cross_entropy_loss_defn(logits, target_batch), key}
+        end,
+        &elem(&1, 0)
+      )
+
+    {loss, gradients, key}
+  end
+
+  defp train_classifier_epoch(
+         state,
+         train_loader,
+         val_loader,
+         device,
+         epoch,
+         eval_freq,
+         eval_iter
+       ) do
+    train_loader
+    # Shuffle or enumerate one finite epoch of batches, mirroring the language
+    # model training loop.
+    |> epoch_batches()
+    |> Enum.reduce(state, fn batch, state ->
+      # Split a loader batch into model inputs and class labels, then transfer
+      # both tensors to the requested backend.
+      {input_batch, target_batch} = stack_batch(batch, device)
+
+      # Compute differentiable cross entropy and its gradients for the current
+      # model parameters. This is the Elixir/Nx counterpart to loss.backward().
+      {_loss, gradients, key} =
+        classifier_loss_and_grad(state.model, input_batch, target_batch, state.key)
+
+      # Apply optimizer updates and carry AdamW moment history forward.
+      {model, optimizer} = optimizer_step(state.optimizer, state.model, gradients)
+
+      # Classification progress is tracked by examples, not tokens.
+      examples_seen = state.examples_seen + Nx.axis_size(input_batch, 0)
+      global_step = state.global_step + 1
+
+      state = %{
+        state
+        | model: model,
+          optimizer: optimizer,
+          key: key,
+          examples_seen: examples_seen,
+          global_step: global_step
+      }
+
+      # Periodically evaluate differentiable loss on a fixed number of train and
+      # validation batches. Accuracy is measured after each epoch.
+      if rem(global_step, eval_freq) == 0 do
+        {train_loss, val_loss} =
+          evaluate_classifier_model(model, train_loader, val_loader, device, eval_iter)
+
+        IO.puts(
+          "Ep #{epoch} (Step #{pad_step(global_step)}): " <>
+            "Train loss #{format_loss(train_loss)}, Val loss #{format_loss(val_loss)}"
+        )
+
+        %{
+          state
+          | train_losses: [train_loss | state.train_losses],
+            val_losses: [val_loss | state.val_losses]
+        }
+      else
+        state
+      end
+    end)
   end
 
   defp train_epoch(
@@ -839,6 +1085,9 @@ defmodule LlmScratch.Training do
 
   defp format_loss(:nan), do: "nan"
   defp format_loss(loss), do: :erlang.float_to_binary(loss * 1.0, decimals: 3)
+
+  defp format_percent(:nan), do: "nan"
+  defp format_percent(value), do: :erlang.float_to_binary(value * 100.0, decimals: 2)
 
   defp pad_step(step) do
     step

@@ -9,9 +9,11 @@ defmodule LlmFromScratch6Test do
     GPTModel,
     LossClassificationUtils,
     LossUtils,
+    ModelCheckpoint,
     SpamDataset,
     TextGeneration,
-    TextUtils
+    TextUtils,
+    Training
   }
 
   @tag :download
@@ -153,6 +155,12 @@ defmodule LlmFromScratch6Test do
     }
   end
 
+  defp gpt2_compatible_token_ids(text) do
+    {:ok, token_ids} = Tiktoken.encode("code-davinci-002", text, ["<|endoftext|>"])
+
+    Enum.map(token_ids, &min(&1, 50_256))
+  end
+
   @tag :download
   @tag timeout: 900_000
   test "6.4 loads OpenAI GPT-2 and generates classification prompts" do
@@ -254,6 +262,7 @@ defmodule LlmFromScratch6Test do
     # we want to train final_norm block and last transformer block
     # Sebastian states that based on his experiments, we will get better results
     num_classes = 2
+
     classification_model =
       frozen_model
       |> GPTModel.replace_out_head(num_classes, seed: 123, bias: true)
@@ -264,7 +273,7 @@ defmodule LlmFromScratch6Test do
     assert inspect(classification_model) =~
              "(out_head): Linear(in_features=768, out_features=2, bias=true)"
 
-    #input message that we want to classify
+    # input message that we want to classify
     inputs =
       "Do you have time"
       |> TextUtils.text_to_token_ids("code-davinci-002")
@@ -297,6 +306,7 @@ defmodule LlmFromScratch6Test do
     # Because of that, only the last message token has attention weights of all previous token.
     last_output_token = outputs[[.., -1, ..]]
     assert Nx.shape(last_output_token) == {1, 2}
+
     assert Nx.all_close(last_output_token, Nx.tensor([[-1.0933434, 3.5170393]]), atol: 1.0e-5)
            |> Nx.to_number() == 1
   end
@@ -308,7 +318,7 @@ defmodule LlmFromScratch6Test do
     device = Nx.default_backend(EXLA.Backend)
     on_exit(fn -> Nx.default_backend(previous_backend) end)
 
-    tokenizer = "code-davinci-002"
+    tokenizer = &gpt2_compatible_token_ids/1
 
     train_dataset = SpamDataset.new("train.csv", tokenizer, max_length: nil)
 
@@ -360,5 +370,128 @@ defmodule LlmFromScratch6Test do
     assert_in_delta train_loss, 1.5194151997566223, 1.0e-6
     assert_in_delta val_loss, 1.4858015120029449, 1.0e-6
     assert_in_delta test_loss, 1.3634233981370927, 1.0e-6
+  end
+
+  @tag :download
+  @tag :train
+  @tag timeout: 3_600_000
+  test "6.7 fine-tunes classifier on spam dataset" do
+    previous_backend = Nx.default_backend()
+    device = Nx.default_backend(EXLA.Backend)
+    on_exit(fn -> Nx.default_backend(previous_backend) end)
+
+    tokenizer = &gpt2_compatible_token_ids/1
+
+    train_dataset = SpamDataset.new("train.csv", tokenizer, max_length: nil)
+
+    val_dataset =
+      SpamDataset.new("validation.csv", tokenizer, max_length: train_dataset.max_length)
+
+    batch_size = 8
+    :rand.seed(:exsss, {123, 123, 123})
+
+    train_loader =
+      train_dataset
+      |> dataset_samples()
+      |> DataLoader.new(batch_size: batch_size, shuffle: true, num_workers: 0, drop_last: true)
+
+    val_loader =
+      val_dataset
+      |> dataset_samples()
+      |> DataLoader.new(batch_size: batch_size, num_workers: 0, drop_last: false)
+
+    model =
+      "124M"
+      |> GPT2OpenAI.load_model(models_dir: "gpt2")
+      |> GPTModel.freeze()
+      |> GPTModel.replace_out_head(2, seed: 123, bias: true)
+      |> GPTModel.set_trainable([:out_head, :final_norm, {:trf_block, 11}])
+
+    optimizer = Training.adamw(5.0e-5, weight_decay: 0.1)
+    num_epochs = 5
+
+    {trained_model, trained_optimizer, train_losses, val_losses, train_accs, val_accs,
+     examples_seen} =
+      Training.train_classifier_simple(
+        model,
+        train_loader,
+        val_loader,
+        optimizer,
+        device,
+        num_epochs,
+        50,
+        5,
+        return_optimizer: true
+      )
+
+    checkpoint_path = "ch6_spam_classifier_model_and_optimizer.nx"
+    ModelCheckpoint.save_training_state!(trained_model, trained_optimizer, checkpoint_path)
+
+    metrics_path = "ch6_spam_classifier_training_metrics.json"
+
+    write_training_metrics!(
+      metrics_path,
+      num_epochs,
+      examples_seen,
+      train_losses,
+      val_losses,
+      train_accs,
+      val_accs
+    )
+
+    assert %GPTModel{} = trained_model
+    assert %Training.AdamW{} = trained_optimizer
+    assert File.exists?(checkpoint_path)
+    assert File.stat!(checkpoint_path).size > 0
+    assert File.exists?(metrics_path)
+    assert File.stat!(metrics_path).size > 0
+    assert length(train_losses) == 13
+    assert length(val_losses) == 13
+    assert length(train_accs) == num_epochs
+    assert length(val_accs) == num_epochs
+    assert examples_seen == train_loader.length * batch_size * num_epochs
+    assert Enum.all?(train_losses ++ val_losses, &is_float/1)
+    assert Enum.all?(train_accs ++ val_accs, &(&1 >= 0.0 and &1 <= 1.0))
+  end
+
+  defp write_training_metrics!(
+         path,
+         num_epochs,
+         examples_seen,
+         train_losses,
+         val_losses,
+         train_accs,
+         val_accs
+       ) do
+    metrics = %{
+      num_epochs: num_epochs,
+      examples_seen: examples_seen,
+      losses: %{
+        epochs_seen: linspace(0.0, num_epochs * 1.0, length(train_losses)),
+        examples_seen: linspace(0.0, examples_seen * 1.0, length(train_losses)),
+        train_values: train_losses,
+        val_values: val_losses
+      },
+      accuracies: %{
+        epochs_seen: linspace(1.0, num_epochs * 1.0, length(train_accs)),
+        examples_seen:
+          linspace(examples_seen / num_epochs, examples_seen * 1.0, length(train_accs)),
+        train_values: train_accs,
+        val_values: val_accs
+      }
+    }
+
+    {:ok, encoded_metrics} = Jason.encode(metrics, pretty: true)
+    File.write!(path, encoded_metrics)
+  end
+
+  defp linspace(_start, stop, 1), do: [stop * 1.0]
+
+  defp linspace(start, stop, count) do
+    step = (stop - start) / (count - 1)
+
+    Enum.map(0..(count - 1), fn index ->
+      start + index * step
+    end)
   end
 end
