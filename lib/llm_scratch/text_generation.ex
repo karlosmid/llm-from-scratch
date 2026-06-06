@@ -206,6 +206,87 @@ defmodule LlmScratch.TextGeneration do
     generated_idx
   end
 
+  @spec classify_review(
+          String.t(),
+          struct(),
+          String.t() | (String.t() -> [integer()]),
+          term(),
+          nil | pos_integer(),
+          integer()
+        ) :: String.t()
+  @doc """
+  Classifies a review/message as `"spam"` or `"not spam"`.
+
+  This mirrors the book's classifier inference helper:
+
+      input_ids = tokenizer.encode(text)
+      input_ids = input_ids[:max_length]
+      input_ids += [pad_token_id] * (max_length - len(input_ids))
+      logits = model(input_tensor)[:, -1, :]
+      predicted_label = torch.argmax(logits, dim=-1).item()
+
+  ## Arguments
+
+    * `text` - message/review text to classify.
+    * `model` - GPT-style classifier model whose output head has two classes.
+    * `tokenizer` - either a Tiktoken model name or a one-argument tokenizer
+      function returning token ids.
+    * `device` - Nx backend target. Use `:default` or `nil` to keep tensors on
+      their current backend.
+    * `max_length` - optional fixed input length. The sequence is truncated to
+      `min(max_length, model context length)` and padded to that same length.
+      When `nil`, only the model context-length truncation is applied.
+    * `pad_token_id` - token id appended when padding is needed. Defaults to
+      GPT-2's end-of-text token id, `50256`.
+
+  ## Returns
+
+  Returns `"spam"` when the predicted label id is `1`; otherwise returns
+  `"not spam"`.
+  """
+  def classify_review(
+        text,
+        model,
+        tokenizer,
+        device \\ :default,
+        max_length \\ nil,
+        pad_token_id \\ 50_256
+      ) do
+    input_ids = encode_text(text, tokenizer)
+    supported_context_length = context_length(model)
+    target_length = target_input_length(input_ids, max_length, supported_context_length)
+
+    # Classifier inference uses the same fixed-length preparation as training:
+    # truncate long messages first, then pad short messages so the model sees
+    # the expected context width.
+    input_ids =
+      input_ids
+      |> Enum.take(target_length)
+      |> then(&(&1 ++ List.duplicate(pad_token_id, target_length - length(&1))))
+
+    input_tensor =
+      input_ids
+      |> Nx.tensor(type: {:s, 64})
+      |> Nx.new_axis(0)
+      |> maybe_transfer_tensor(device)
+
+    model = maybe_transfer_model(model, device)
+
+    # Calling forward/2 is inference-only in this codebase. Dropout is only used
+    # by train/3, and gradients are only created inside explicit value_and_grad
+    # calls, so this is the Nx counterpart to model.eval() and no_grad().
+    predicted_label =
+      model
+      |> forward!(input_tensor)
+      |> last_position_logits()
+      |> Nx.argmax(axis: -1)
+      |> Nx.backend_transfer(Nx.BinaryBackend)
+      |> Nx.to_flat_list()
+      |> List.first()
+
+    if predicted_label == 1, do: "spam", else: "not spam"
+  end
+
   defp last_tokens(idx, context_size) do
     {_batch_size, seq_len} = Nx.shape(idx)
     length = min(seq_len, context_size)
@@ -301,6 +382,44 @@ defmodule LlmScratch.TextGeneration do
     else
       raise ArgumentError, "expected #{inspect(module)} to export forward/2"
     end
+  end
+
+  defp encode_text(text, tokenizer) when is_binary(tokenizer) do
+    {:ok, token_ids} = Tiktoken.encode(tokenizer, text, ["<|endoftext|>"])
+    token_ids
+  end
+
+  defp encode_text(text, tokenizer) do
+    tokenizer.(text)
+  end
+
+  defp context_length(%{cfg: %{context_length: context_length}}), do: context_length
+
+  defp context_length(%{pos_emb: %{weight: weight}}) do
+    {context_length, _embedding_dim} = Nx.shape(weight)
+    context_length
+  end
+
+  defp target_input_length(input_ids, nil, supported_context_length) do
+    min(length(input_ids), supported_context_length)
+  end
+
+  defp target_input_length(_input_ids, max_length, supported_context_length) do
+    min(max_length, supported_context_length)
+  end
+
+  defp maybe_transfer_tensor(tensor, nil), do: tensor
+  defp maybe_transfer_tensor(tensor, :default), do: tensor
+
+  defp maybe_transfer_tensor(tensor, device) do
+    Nx.backend_transfer(tensor, device)
+  end
+
+  defp maybe_transfer_model(model, nil), do: model
+  defp maybe_transfer_model(model, :default), do: model
+
+  defp maybe_transfer_model(model, device) do
+    Nx.backend_transfer(model, device)
   end
 
   defp validate_idx_shape!(idx) do

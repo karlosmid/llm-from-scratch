@@ -23,7 +23,9 @@ defmodule LlmScratch.ModelCheckpoint do
   """
   @spec save!(struct(), path()) :: :ok
   def save!(model, path) when is_struct(model) and is_binary(path) do
-    write_serialized!(model, path)
+    model
+    |> Nx.backend_transfer(Nx.BinaryBackend)
+    |> write_serialized!(path)
   end
 
   @doc """
@@ -78,8 +80,8 @@ defmodule LlmScratch.ModelCheckpoint do
       when is_struct(model) and is_struct(optimizer) and is_binary(path) do
     write_serialized!(
       %{
-        model_state_dict: model,
-        optimizer_state_dict: optimizer
+        model_state_dict: Nx.backend_transfer(model, Nx.BinaryBackend),
+        optimizer_state_dict: Nx.backend_transfer(optimizer, Nx.BinaryBackend)
       },
       path
     )

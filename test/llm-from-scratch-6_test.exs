@@ -411,4 +411,54 @@ defmodule LlmFromScratch6Test do
     assert Enum.all?(train_losses ++ val_losses, &is_float/1)
     assert Enum.all?(train_accs ++ val_accs, &(&1 >= 0.0 and &1 <= 1.0))
   end
+
+  @tag :emlx
+  @tag :train
+  test "6.8 classifies spam examples with saved classifier checkpoint" do
+    device = use_accelerated_backend()
+    tokenizer = &gpt2_compatible_token_ids/1
+    train_dataset = SpamDataset.new("train.csv", tokenizer, max_length: nil)
+    checkpoint_path = "ch6_spam_classifier_model_and_optimizer.nx"
+
+    assert File.exists?(checkpoint_path)
+
+    %{model_state_dict: model} = ModelCheckpoint.load_training_state!(checkpoint_path)
+    model = Nx.backend_transfer(model, device)
+
+    text_1 =
+      "You are a winner you have been specially" <>
+        " selected to receive $1000 cash or a $2000 award."
+
+    assert TextGeneration.classify_review(
+             text_1,
+             model,
+             tokenizer,
+             :default,
+             train_dataset.max_length
+           ) == "spam"
+
+    text_2 =
+      "Hey, just wanted to check if we're still on" <>
+        " for dinner tonight? Let me know!"
+
+    assert TextGeneration.classify_review(
+             text_2,
+             model,
+             tokenizer,
+             :default,
+             train_dataset.max_length
+           ) == "not spam"
+
+    text_3 =
+      "Elixir is cool distributed language, would you like to try it?"
+
+    assert TextGeneration.classify_review(
+             text_3,
+             model,
+             tokenizer,
+             :default,
+             train_dataset.max_length
+           ) == "not spam"
+
+  end
 end
