@@ -453,6 +453,8 @@ defmodule LlmScratch.Training do
     * `opts` - optional settings:
       * `:return_optimizer` - when `true`, include final optimizer state in the
         returned tuple.
+      * `:target` - output token used for classifier loss and accuracy.
+        Defaults to `:last_token`; use `:first_token` for exercise 6.3.
 
   ## Returns
 
@@ -494,7 +496,8 @@ defmodule LlmScratch.Training do
       train_accs: [],
       val_accs: [],
       examples_seen: 0,
-      global_step: -1
+      global_step: -1,
+      target: Keyword.get(opts, :target, :last_token)
     }
 
     state =
@@ -517,11 +520,18 @@ defmodule LlmScratch.Training do
             train_loader,
             state.model,
             device,
-            eval_iter
+            eval_iter,
+            target: state.target
           )
 
         val_accuracy =
-          LossClassificationUtils.calc_accuracy_loader(val_loader, state.model, device, eval_iter)
+          LossClassificationUtils.calc_accuracy_loader(
+            val_loader,
+            state.model,
+            device,
+            eval_iter,
+            target: state.target
+          )
 
         IO.puts(
           "Training accuracy: #{format_percent(train_accuracy)}% | " <>
@@ -589,12 +599,15 @@ defmodule LlmScratch.Training do
   ## Returns
 
     * `{train_loss, val_loss}` as floats. The loss is computed from final-token
-      logits via `target: :last_token`.
+      logits by default. Pass `target: :first_token` to evaluate first-token
+      classifier loss.
   """
-  def evaluate_classifier_model(model, train_loader, val_loader, device, eval_iter) do
+  def evaluate_classifier_model(model, train_loader, val_loader, device, eval_iter, opts \\ []) do
+    target = Keyword.get(opts, :target, :last_token)
+
     {
-      LossUtils.calc_loss_loader(train_loader, model, device, eval_iter, target: :last_token),
-      LossUtils.calc_loss_loader(val_loader, model, device, eval_iter, target: :last_token)
+      LossUtils.calc_loss_loader(train_loader, model, device, eval_iter, target: target),
+      LossUtils.calc_loss_loader(val_loader, model, device, eval_iter, target: target)
     }
   end
 
@@ -700,6 +713,35 @@ defmodule LlmScratch.Training do
     {loss, gradients, key}
   end
 
+  @doc """
+  Computes classifier loss and gradients from the first output token.
+
+  This is intentionally separate from `classifier_loss_and_grad/4` so the
+  default training path remains the final-token classifier from chapter 6.
+  """
+  defn classifier_first_token_loss_and_grad(model, input_batch, target_batch, key) do
+    {{loss, key}, {gradients, _input_gradients, _target_gradients, _key_gradients}} =
+      value_and_grad(
+        {model, input_batch, target_batch, key},
+        fn {model, input_batch, target_batch, key} ->
+          {logits, key} = GPTModel.train(model, input_batch, key)
+          logits = logits[[.., 0, ..]]
+          {LossUtils.cross_entropy_loss_defn(logits, target_batch), key}
+        end,
+        &elem(&1, 0)
+      )
+
+    {loss, gradients, key}
+  end
+
+  defp classifier_loss_and_grad(model, input_batch, target_batch, key, :last_token) do
+    classifier_loss_and_grad(model, input_batch, target_batch, key)
+  end
+
+  defp classifier_loss_and_grad(model, input_batch, target_batch, key, :first_token) do
+    classifier_first_token_loss_and_grad(model, input_batch, target_batch, key)
+  end
+
   defp train_classifier_epoch(
          state,
          train_loader,
@@ -721,7 +763,13 @@ defmodule LlmScratch.Training do
       # Compute differentiable cross entropy and its gradients for the current
       # model parameters. This is the Elixir/Nx counterpart to loss.backward().
       {_loss, gradients, key} =
-        classifier_loss_and_grad(state.model, input_batch, target_batch, state.key)
+        classifier_loss_and_grad(
+          state.model,
+          input_batch,
+          target_batch,
+          state.key,
+          state.target
+        )
 
       # Apply optimizer updates and carry AdamW moment history forward.
       {model, optimizer} = optimizer_step(state.optimizer, state.model, gradients)
@@ -743,7 +791,9 @@ defmodule LlmScratch.Training do
       # validation batches. Accuracy is measured after each epoch.
       if rem(global_step, eval_freq) == 0 do
         {train_loss, val_loss} =
-          evaluate_classifier_model(model, train_loader, val_loader, device, eval_iter)
+          evaluate_classifier_model(model, train_loader, val_loader, device, eval_iter,
+            target: state.target
+          )
 
         IO.puts(
           "Ep #{epoch} (Step #{pad_step(global_step)}): " <>

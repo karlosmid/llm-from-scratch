@@ -412,6 +412,266 @@ defmodule LlmFromScratch6Test do
     assert Enum.all?(train_accs ++ val_accs, &(&1 >= 0.0 and &1 <= 1.0))
   end
 
+  @tag :download
+  @tag :emlx
+  @tag :train_long
+  @tag timeout: 3_600_000
+  test "exercise 6.1 fine-tunes classifier with model context length padding" do
+    device = use_accelerated_backend()
+
+    tokenizer = &gpt2_compatible_token_ids/1
+    model_context_length = GPTConfig.openai_gpt2("gpt2-small (124M)").context_length
+
+    train_dataset = SpamDataset.new("train.csv", tokenizer, max_length: model_context_length)
+
+    val_dataset =
+      SpamDataset.new("validation.csv", tokenizer, max_length: model_context_length)
+
+    test_dataset =
+      SpamDataset.new("test.csv", tokenizer, max_length: model_context_length)
+
+    assert model_context_length == 1024
+    assert train_dataset.max_length == model_context_length
+    assert val_dataset.max_length == model_context_length
+    assert test_dataset.max_length == model_context_length
+
+    batch_size = 8
+    :rand.seed(:exsss, {123, 123, 123})
+
+    train_loader =
+      train_dataset
+      |> dataset_samples()
+      |> DataLoader.new(batch_size: batch_size, shuffle: true, num_workers: 0, drop_last: true)
+
+    val_loader =
+      val_dataset
+      |> dataset_samples()
+      |> DataLoader.new(batch_size: batch_size, num_workers: 0, drop_last: false)
+
+    test_loader =
+      test_dataset
+      |> dataset_samples()
+      |> DataLoader.new(batch_size: batch_size, num_workers: 0, drop_last: false)
+
+    {input_batch, target_batch} =
+      train_loader.batches
+      |> List.first()
+      |> collate_batch()
+
+    assert Nx.shape(input_batch) == {batch_size, model_context_length}
+    assert Nx.shape(target_batch) == {batch_size}
+
+    model =
+      "124M"
+      |> GPT2OpenAI.load_model(models_dir: "gpt2")
+      |> GPTModel.freeze()
+      |> GPTModel.replace_out_head(2, seed: 123, bias: true)
+      |> GPTModel.set_trainable([:out_head, :final_norm, {:trf_block, 11}])
+
+    optimizer = Training.adamw(5.0e-5, weight_decay: 0.1)
+    num_epochs = 5
+
+    {trained_model, _trained_optimizer, _train_losses, _val_losses, _train_accs, _val_accs,
+     _examples_seen} =
+      Training.train_classifier_simple(
+        model,
+        train_loader,
+        val_loader,
+        optimizer,
+        device,
+        num_epochs,
+        50,
+        5,
+        return_optimizer: true
+      )
+
+    test_accuracy =
+      LossClassificationUtils.calc_accuracy_loader(test_loader, trained_model, device, nil)
+
+    # training takes much longer with worse test accuracy!
+    assert test_accuracy < 0.9
+  end
+
+  @tag :download
+  @tag :emlx
+  @tag :train_long
+  @tag timeout: 3_600_000
+  test "exercise 6.2 fine-tunes the whole classifier model" do
+    device = use_accelerated_backend()
+
+    tokenizer = &gpt2_compatible_token_ids/1
+
+    train_dataset = SpamDataset.new("train.csv", tokenizer, max_length: nil)
+
+    val_dataset =
+      SpamDataset.new("validation.csv", tokenizer, max_length: train_dataset.max_length)
+
+    test_dataset =
+      SpamDataset.new("test.csv", tokenizer, max_length: train_dataset.max_length)
+
+    batch_size = 8
+    :rand.seed(:exsss, {123, 123, 123})
+
+    train_loader =
+      train_dataset
+      |> dataset_samples()
+      |> DataLoader.new(batch_size: batch_size, shuffle: true, num_workers: 0, drop_last: true)
+
+    val_loader =
+      val_dataset
+      |> dataset_samples()
+      |> DataLoader.new(batch_size: batch_size, num_workers: 0, drop_last: false)
+
+    test_loader =
+      test_dataset
+      |> dataset_samples()
+      |> DataLoader.new(batch_size: batch_size, num_workers: 0, drop_last: false)
+
+    model =
+      "124M"
+      |> GPT2OpenAI.load_model(models_dir: "gpt2")
+      |> GPTModel.replace_out_head(2, seed: 123, bias: true)
+      |> GPTModel.unfreeze()
+
+    assert model.trainable == :all
+
+    optimizer = Training.adamw(5.0e-5, weight_decay: 0.1)
+    num_epochs = 5
+
+    {trained_model, train_losses, val_losses, train_accs, val_accs, examples_seen} =
+      Training.train_classifier_simple(
+        model,
+        train_loader,
+        val_loader,
+        optimizer,
+        device,
+        num_epochs,
+        50,
+        5
+      )
+
+    test_accuracy =
+      LossClassificationUtils.calc_accuracy_loader(test_loader, trained_model, device, nil)
+
+    metrics_path = "ch6_exercise_6_2_full_model_training_metrics.json"
+
+    write_training_metrics!(
+      metrics_path,
+      num_epochs,
+      examples_seen,
+      train_losses,
+      val_losses,
+      train_accs,
+      val_accs
+    )
+
+    assert %GPTModel{} = trained_model
+    assert trained_model.trainable == :all
+    assert File.exists?(metrics_path)
+    assert File.stat!(metrics_path).size > 0
+    assert length(train_losses) == 13
+    assert length(val_losses) == 13
+    assert length(train_accs) == num_epochs
+    assert length(val_accs) == num_epochs
+    assert examples_seen == train_loader.length * batch_size * num_epochs
+    assert Enum.all?(train_losses ++ val_losses, &is_float/1)
+    assert Enum.all?(train_accs ++ val_accs, &(&1 >= 0.0 and &1 <= 1.0))
+
+    # training took 3x longer than when we trained only three layers, but test accurracy is 100%
+    assert test_accuracy >= 0.98 and test_accuracy <= 1.0
+  end
+
+  @tag :download
+  @tag :emlx
+  @tag :train_long
+  @tag timeout: 3_600_000
+  test "exercise 6.3 fine-tunes classifier from the first output token" do
+    device = use_accelerated_backend()
+
+    tokenizer = &gpt2_compatible_token_ids/1
+
+    train_dataset = SpamDataset.new("train.csv", tokenizer, max_length: nil)
+
+    val_dataset =
+      SpamDataset.new("validation.csv", tokenizer, max_length: train_dataset.max_length)
+
+    test_dataset =
+      SpamDataset.new("test.csv", tokenizer, max_length: train_dataset.max_length)
+
+    batch_size = 8
+    :rand.seed(:exsss, {123, 123, 123})
+
+    train_loader =
+      train_dataset
+      |> dataset_samples()
+      |> DataLoader.new(batch_size: batch_size, shuffle: true, num_workers: 0, drop_last: true)
+
+    val_loader =
+      val_dataset
+      |> dataset_samples()
+      |> DataLoader.new(batch_size: batch_size, num_workers: 0, drop_last: false)
+
+    test_loader =
+      test_dataset
+      |> dataset_samples()
+      |> DataLoader.new(batch_size: batch_size, num_workers: 0, drop_last: false)
+
+    model =
+      "124M"
+      |> GPT2OpenAI.load_model(models_dir: "gpt2")
+      |> GPTModel.freeze()
+      |> GPTModel.replace_out_head(2, seed: 123, bias: true)
+      |> GPTModel.set_trainable([:out_head, :final_norm, {:trf_block, 11}])
+
+    optimizer = Training.adamw(5.0e-5, weight_decay: 0.1)
+    num_epochs = 5
+
+    {trained_model, train_losses, val_losses, train_accs, val_accs, examples_seen} =
+      Training.train_classifier_simple(
+        model,
+        train_loader,
+        val_loader,
+        optimizer,
+        device,
+        num_epochs,
+        50,
+        5,
+        target: :first_token
+      )
+
+    test_accuracy =
+      LossClassificationUtils.calc_accuracy_loader(test_loader, trained_model, device, nil,
+        target: :first_token
+      )
+
+    metrics_path = "ch6_exercise_6_3_first_token_training_metrics.json"
+
+    write_training_metrics!(
+      metrics_path,
+      num_epochs,
+      examples_seen,
+      train_losses,
+      val_losses,
+      train_accs,
+      val_accs
+    )
+
+    assert %GPTModel{} = trained_model
+    assert File.exists?(metrics_path)
+    assert File.stat!(metrics_path).size > 0
+    assert length(train_losses) == 13
+    assert length(val_losses) == 13
+    assert length(train_accs) == num_epochs
+    assert length(val_accs) == num_epochs
+    assert examples_seen == train_loader.length * batch_size * num_epochs
+    assert Enum.all?(train_losses ++ val_losses, &is_float/1)
+    assert Enum.all?(train_accs ++ val_accs, &(&1 >= 0.0 and &1 <= 1.0))
+
+    # The first token cannot attend to the rest of the SMS text, unlike the
+    # final token used in exercise 6.7.
+    assert test_accuracy < 0.9
+  end
+
   @tag :emlx
   @tag :train
   test "6.8 classifies spam examples with saved classifier checkpoint" do
@@ -459,6 +719,5 @@ defmodule LlmFromScratch6Test do
              :default,
              train_dataset.max_length
            ) == "not spam"
-
   end
 end

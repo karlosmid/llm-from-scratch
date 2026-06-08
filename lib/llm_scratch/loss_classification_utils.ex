@@ -38,8 +38,9 @@ defmodule LlmScratch.LossClassificationUtils do
   When an empty loader, or `num_batches: 0`, produces no examples, returns
   `:nan`.
   """
-  @spec calc_accuracy_loader(map(), struct(), device(), nil | non_neg_integer()) :: float() | :nan
-  def calc_accuracy_loader(data_loader, model, device \\ :default, num_batches \\ nil) do
+  @spec calc_accuracy_loader(map(), struct(), device(), nil | non_neg_integer(), keyword()) ::
+          float() | :nan
+  def calc_accuracy_loader(data_loader, model, device \\ :default, num_batches \\ nil, opts \\ []) do
     loader_length = Map.get(data_loader, :length, 0)
     num_batches = normalize_num_batches(num_batches, loader_length)
 
@@ -56,15 +57,13 @@ defmodule LlmScratch.LossClassificationUtils do
         input_batch = maybe_transfer(input_batch, device)
         target_batch = maybe_transfer(target_batch, device)
 
-        # A classification head emits logits for every sequence position. With a
-        # causal model, the final token has seen the full message, so its logits
-        # are the sequence-level class scores.
+        # A classification head emits logits for every sequence position.
         logits =
           model
           |> forward_model(input_batch)
-          |> then(& &1[[.., -1, ..]])
+          |> select_logits(opts)
 
-        # `argmax(axis: -1)` turns the final-token class scores into integer
+        # `argmax(axis: -1)` turns the selected-token class scores into integer
         # labels. Comparing against the target tensor yields one boolean per row.
         predicted_labels = Nx.argmax(logits, axis: -1)
         # Nx.tensor([0, 1, 1, 0]) and
@@ -89,6 +88,13 @@ defmodule LlmScratch.LossClassificationUtils do
 
   defp normalize_num_batches(nil, loader_length), do: loader_length
   defp normalize_num_batches(num_batches, loader_length), do: min(num_batches, loader_length)
+
+  defp select_logits(logits, opts) do
+    case Keyword.get(opts, :target, :last_token) do
+      :first_token -> logits[[.., 0, ..]]
+      :last_token -> logits[[.., -1, ..]]
+    end
+  end
 
   defp stack_batch({input_batch, target_batch}) do
     {input_batch, target_batch}

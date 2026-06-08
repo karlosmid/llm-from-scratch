@@ -126,7 +126,8 @@ defmodule LlmScratch.LossUtils do
     * `:target` - use `:all_tokens` or omit it for language-model loss over all
       token positions. Use `:last_token` for sequence classification, where the
       model output is sliced to `model(input_batch)[:, -1, :]` before computing
-      cross entropy.
+      cross entropy. Use `:first_token` to instead classify from
+      `model(input_batch)[:, 0, :]`.
   """
   @spec calc_loss_batch(
           Nx.Tensor.t(),
@@ -158,8 +159,8 @@ defmodule LlmScratch.LossUtils do
   Pass `nil` for `num_batches` to evaluate one full pass through the loader.
   Returns `:nan` when the loader has no batches.
 
-  Accepts the same options as `calc_loss_batch/5`; use `target: :last_token` for
-  classification loss.
+  Accepts the same options as `calc_loss_batch/5`; use `target: :last_token` or
+  `target: :first_token` for classification loss.
   """
   @spec calc_loss_loader(
           map(),
@@ -199,12 +200,17 @@ defmodule LlmScratch.LossUtils do
   defp normalize_num_batches(num_batches, loader_length), do: min(num_batches, loader_length)
 
   defp select_loss_logits(logits, opts) do
-    if Keyword.get(opts, :target) == :last_token do
-      # Classification uses only the final token because it has causal attention
-      # over the full input message.
-      logits[[.., -1, ..]]
-    else
-      logits
+    case Keyword.get(opts, :target) do
+      :last_token ->
+        # Classification uses only the final token because it has causal
+        # attention over the full input message.
+        logits[[.., -1, ..]]
+
+      :first_token ->
+        logits[[.., 0, ..]]
+
+      _target ->
+        logits
     end
   end
 
