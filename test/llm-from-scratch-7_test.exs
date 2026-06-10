@@ -1,7 +1,7 @@
 defmodule LlmFromScratch7Test do
   use ExUnit.Case
 
-  alias LlmScratch.FineTuneDataLoader
+  alias LlmScratch.{FineTuneDataLoader, InstructionDataset}
 
   @instruction_data_url "https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch07/01_main-chapter-code/instruction-data.json"
 
@@ -64,5 +64,30 @@ defmodule LlmFromScratch7Test do
     assert length(train_data) == 935
     assert length(val_data) == 55
     assert length(test_data) == 110
+  end
+
+  test "7.2 creates pre-tokenized instruction dataset" do
+    entry = %{
+      "instruction" => "Classify the sentiment of the text.",
+      "input" => "I loved it.",
+      "output" => "Positive."
+    }
+
+    tokenizer = "code-davinci-002"
+    dataset = InstructionDataset.new([entry], tokenizer)
+
+    expected_text =
+      "Below is an instruction that describes a task. " <>
+        "Write a response that appropriately completes the request." <>
+        "\n\n### Instruction:\nClassify the sentiment of the text." <>
+        "\n\n### Input:\nI loved it." <>
+        "\n\n### Response:\nPositive."
+
+    {:ok, expected_tokens} = Tiktoken.encode(tokenizer, expected_text, ["<|endoftext|>"])
+
+    assert dataset.data == [entry]
+    assert dataset.encoded_texts == [expected_tokens]
+    assert InstructionDataset.get(dataset, 0) == expected_tokens
+    assert InstructionDataset.length(dataset) == 1
   end
 end
