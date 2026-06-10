@@ -90,4 +90,23 @@ defmodule LlmFromScratch7Test do
     assert InstructionDataset.get(dataset, 0) == expected_tokens
     assert InstructionDataset.length(dataset) == 1
   end
+
+  test "7.2 custom collate draft pads batch inputs" do
+    inputs_1 = [0, 1, 2, 3, 4]
+    inputs_2 = [5, 6]
+    inputs_3 = [7, 8, 9]
+    batch = {inputs_1, inputs_2, inputs_3}
+
+    inputs_tensor = InstructionDataset.custom_collate_draft_1(batch)
+
+    assert inputs_tensor ==
+             Nx.tensor(
+               [
+                 [0, 1, 2, 3, 4],
+                 [5, 6, 50_256, 50_256, 50_256],
+                 [7, 8, 9, 50_256, 50_256]
+               ],
+               type: {:s, 64}
+             )
+  end
 end

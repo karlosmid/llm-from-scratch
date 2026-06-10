@@ -30,6 +30,7 @@ defmodule LlmScratch.InstructionDataset do
   defstruct [:data, :encoded_texts]
 
   @end_of_text "<|endoftext|>"
+  @pad_token_id 50_256
 
   @type instruction_record :: LlmScratch.FineTuneDataLoader.instruction_record()
   @type tokenizer :: String.t()
@@ -148,6 +149,84 @@ defmodule LlmScratch.InstructionDataset do
     Kernel.length(dataset.data)
   end
 
+  @doc """
+  Pads a batch of token-id sequences and stacks them into an input tensor.
+
+  This mirrors the first draft of the chapter 7 Python collate function:
+
+      inputs_1 = [0, 1, 2, 3, 4]
+      inputs_2 = [5, 6]
+      inputs_3 = [7, 8, 9]
+      batch = (inputs_1, inputs_2, inputs_3)
+      print(custom_collate_draft_1(batch))
+
+  The function finds the longest sequence length in the batch after adding one
+  extra pad token, pads every item to that length, then drops the final token
+  from each row before stacking the rows. This draft returns only the input
+  tensor; it does not build shifted targets yet.
+
+  ## Input Parameters
+
+    * `batch` - tuple or list of token-id lists.
+    * `pad_token_id` - token id used for padding. Defaults to GPT-2's
+      end-of-text token id, `50256`.
+    * `device` - included for parity with the Python example. Nx places the
+      tensor on the active backend, so this argument is currently informational.
+
+  ## Output
+
+  Returns a signed 64-bit Nx tensor with shape
+  `{batch_size, max_sequence_length}`.
+
+  ## Examples
+
+      iex> batch = {[0, 1, 2, 3, 4], [5, 6], [7, 8, 9]}
+      iex> inputs = LlmScratch.InstructionDataset.custom_collate_draft_1(batch)
+      iex> inputs
+      #Nx.Tensor<
+        s64[3][5]
+        [
+          [0, 1, 2, 3, 4],
+          [5, 6, 50256, 50256, 50256],
+          [7, 8, 9, 50256, 50256]
+        ]
+      >
+  """
+  @spec custom_collate_draft_1(tuple() | [[integer()]], integer(), String.t()) ::
+          Nx.Tensor.t()
+  def custom_collate_draft_1(batch, pad_token_id \\ @pad_token_id, device \\ "cpu")
+
+  def custom_collate_draft_1(batch, pad_token_id, device) when is_tuple(batch) do
+    batch
+    |> Tuple.to_list()
+    |> custom_collate_draft_1(pad_token_id, device)
+  end
+
+  def custom_collate_draft_1(batch, pad_token_id, _device) when is_list(batch) do
+    # Find the longest sequence length after the one extra pad token that the
+    # Python draft appends to every item.
+    batch_max_length =
+      batch
+      |> Enum.map(&(Kernel.length(&1) + 1))
+      |> Enum.max(fn -> 0 end)
+
+    inputs =
+      Enum.map(batch, fn item ->
+        # Elixir data is immutable, so this builds the equivalent of
+        # `new_item = item.copy(); new_item += [pad_token_id]`.
+        new_item = item ++ [pad_token_id]
+
+        # Pad the copied item to the longest sequence length in the batch.
+        padded = pad_to_length(new_item, batch_max_length, pad_token_id)
+
+        # Match `torch.tensor(padded[:-1])` by dropping the final token before
+        # stacking all rows into a single tensor.
+        Enum.slice(padded, 0, batch_max_length - 1)
+      end)
+
+    Nx.tensor(inputs, type: {:s, 64})
+  end
+
   defp full_text(%{"output" => output} = entry) when is_binary(output) do
     instruction_plus_input = LlmScratch.FineTuneDataLoader.format_input(entry)
     response_text = "\n\n### Response:\n#{output}"
@@ -159,5 +238,9 @@ defmodule LlmScratch.InstructionDataset do
     allowed_special = Keyword.get(opts, :allowed_special, [@end_of_text])
     {:ok, token_ids} = Tiktoken.encode(tokenizer, text, allowed_special)
     token_ids
+  end
+
+  defp pad_to_length(token_ids, max_length, pad_token_id) do
+    token_ids ++ List.duplicate(pad_token_id, max_length - Kernel.length(token_ids))
   end
 end
