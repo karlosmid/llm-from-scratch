@@ -46,6 +46,9 @@ defmodule LlmScratch.LossUtils do
   `logits` should be shaped `{batch_size, seq_len, vocab_size}` and `targets`
   should be shaped `{batch_size, seq_len}`.
 
+  Target positions equal to `ignore_index` are excluded from the mean loss.
+  The default `ignore_index` is `-100`, matching PyTorch's cross entropy loss.
+
   ## Examples
 
       iex> logits = Nx.log(Nx.tensor([[[0.5, 0.25, 0.25], [0.125, 0.375, 0.5]]]))
@@ -54,52 +57,69 @@ defmodule LlmScratch.LossUtils do
       iex> Float.round(Nx.to_number(loss), 6)
       0.693147
   """
-  @spec cross_entropy_loss(Nx.Tensor.t(), Nx.Tensor.t()) :: Nx.Tensor.t()
-  def cross_entropy_loss(%Nx.Tensor{} = logits, %Nx.Tensor{} = targets) do
-    cross_entropy_loss_defn(logits, targets)
+  @spec cross_entropy_loss(Nx.Tensor.t(), Nx.Tensor.t(), integer()) :: Nx.Tensor.t()
+  def cross_entropy_loss(%Nx.Tensor{} = logits, %Nx.Tensor{} = targets, ignore_index \\ -100) do
+    cross_entropy_loss_defn(logits, targets, ignore_index)
   end
 
   @doc """
   Defn-compatible mean cross entropy loss from logits and target token ids.
   """
-  defn cross_entropy_loss_defn(logits, targets) do
+  defn cross_entropy_loss_defn(logits, targets, ignore_index \\ -100) do
     if Nx.rank(logits) == 3 do
       # Language-model flow:
       # logits shape is {batch_size, seq_len, vocab_size}
       # targets shape is {batch_size, seq_len}
       vocab_size = Nx.axis_size(logits, 2)
+      valid_targets = Nx.not_equal(targets, ignore_index)
+      safe_targets = Nx.select(valid_targets, targets, 0)
 
       # step1: logits
-      logits
-      # step2: probabilities
-      |> Axon.Activations.softmax(axis: -1)
-      # step3: target probabilities
-      |> Nx.reshape({:auto, vocab_size})
-      |> Nx.take_along_axis(Nx.reshape(targets, {:auto, 1}), axis: 1)
-      |> Nx.squeeze(axes: [1])
-      # step4: logarithmic probabilities
-      |> Nx.log()
-      # step6: negative average log probabilities
-      |> Nx.negate()
-      # step5: average logarithmic probabilities
-      |> Nx.mean()
+      losses =
+        logits
+        # step2: probabilities
+        |> Axon.Activations.softmax(axis: -1)
+        # step3: target probabilities
+        |> Nx.reshape({:auto, vocab_size})
+        |> Nx.take_along_axis(Nx.reshape(safe_targets, {:auto, 1}), axis: 1)
+        |> Nx.squeeze(axes: [1])
+        # step4: logarithmic probabilities
+        |> Nx.log()
+        # step6: negative log probabilities
+        |> Nx.negate()
+
+      valid_targets = Nx.reshape(valid_targets, {:auto})
+
+      valid_targets
+      |> Nx.select(losses, 0.0)
+      |> Nx.sum()
+      # step5: average only over target positions that are not ignored
+      |> Nx.divide(valid_targets |> Nx.as_type({:f, 32}) |> Nx.sum())
     else
       # Classification flow:
       # logits shape is {batch_size, num_classes}
       # targets shape is {batch_size}
+      valid_targets = Nx.not_equal(targets, ignore_index)
+      safe_targets = Nx.select(valid_targets, targets, 0)
+
       # step1: logits
-      logits
-      # step2: probabilities
-      |> Axon.Activations.softmax(axis: -1)
-      # step3: target probabilities
-      |> Nx.take_along_axis(Nx.reshape(targets, {:auto, 1}), axis: 1)
-      |> Nx.squeeze(axes: [1])
-      # step4: logarithmic probabilities
-      |> Nx.log()
-      # step6: negative average log probabilities
-      |> Nx.negate()
-      # step5: average logarithmic probabilities
-      |> Nx.mean()
+      losses =
+        logits
+        # step2: probabilities
+        |> Axon.Activations.softmax(axis: -1)
+        # step3: target probabilities
+        |> Nx.take_along_axis(Nx.reshape(safe_targets, {:auto, 1}), axis: 1)
+        |> Nx.squeeze(axes: [1])
+        # step4: logarithmic probabilities
+        |> Nx.log()
+        # step6: negative log probabilities
+        |> Nx.negate()
+
+      valid_targets
+      |> Nx.select(losses, 0.0)
+      |> Nx.sum()
+      # step5: average only over target positions that are not ignored
+      |> Nx.divide(valid_targets |> Nx.as_type({:f, 32}) |> Nx.sum())
     end
   end
 
@@ -128,6 +148,8 @@ defmodule LlmScratch.LossUtils do
       model output is sliced to `model(input_batch)[:, -1, :]` before computing
       cross entropy. Use `:first_token` to instead classify from
       `model(input_batch)[:, 0, :]`.
+    * `:ignore_index` - target value excluded from the mean cross entropy.
+      Defaults to `-100`.
   """
   @spec calc_loss_batch(
           Nx.Tensor.t(),
@@ -141,10 +163,12 @@ defmodule LlmScratch.LossUtils do
     input_batch = maybe_transfer(input_batch, device)
     target_batch = maybe_transfer(target_batch, device)
 
+    ignore_index = Keyword.get(opts, :ignore_index, -100)
+
     model
     |> forward_model(input_batch)
     |> select_loss_logits(opts)
-    |> cross_entropy_loss(target_batch)
+    |> cross_entropy_loss(target_batch, ignore_index)
   end
 
   @doc """

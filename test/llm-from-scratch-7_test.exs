@@ -1,7 +1,7 @@
 defmodule LlmFromScratch7Test do
   use ExUnit.Case
 
-  alias LlmScratch.{FineTuneDataLoader, InstructionDataset}
+  alias LlmScratch.{FineTuneDataLoader, InstructionDataset, LossUtils}
 
   @instruction_data_url "https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch07/01_main-chapter-code/instruction-data.json"
 
@@ -137,5 +137,33 @@ defmodule LlmFromScratch7Test do
                ],
                type: {:s, 64}
              )
+  end
+
+  test "7.3 cross entropy ignores masked instruction targets" do
+    logits_1 =
+      Nx.tensor([
+        [-1.0, 1.0],
+        [-0.5, 1.5]
+      ])
+
+    targets_1 = Nx.tensor([0, 1], type: {:s, 64})
+    loss_1 = LossUtils.cross_entropy_loss(logits_1, targets_1)
+
+    logits_2 =
+      Nx.tensor([
+        [-1.0, 1.0],
+        [-0.5, 1.5],
+        [-0.5, 1.5]
+      ])
+
+    targets_2 = Nx.tensor([0, 1, 1], type: {:s, 64})
+    loss_2 = LossUtils.cross_entropy_loss(logits_2, targets_2)
+
+    targets_3 = Nx.tensor([0, 1, -100], type: {:s, 64})
+    loss_3 = LossUtils.cross_entropy_loss(logits_2, targets_3)
+
+    assert_in_delta Nx.to_number(loss_1), 1.1269, 1.0e-4
+    assert_in_delta Nx.to_number(loss_2), 0.7936, 1.0e-4
+    assert Nx.equal(loss_1, loss_3) |> Nx.to_number() == 1
   end
 end
