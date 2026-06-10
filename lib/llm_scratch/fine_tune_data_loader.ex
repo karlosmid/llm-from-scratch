@@ -10,7 +10,9 @@ defmodule LlmScratch.FineTuneDataLoader do
   """
 
   @spam_url "https://archive.ics.uci.edu/static/public/228/sms+spam+collection.zip"
+  @instruction_data_url "https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch07/01_main-chapter-code/instruction-data.json"
   @zip_path "sms_spam_collection.zip"
+  @instruction_data_path "instruction-data.json"
   @extracted_path "sms_spam_collection"
   @data_filename "SMSSpamCollection.tsv"
   @raw_filename "SMSSpamCollection"
@@ -28,6 +30,93 @@ defmodule LlmScratch.FineTuneDataLoader do
           label_id: 0 | 1,
           text: String.t()
         }
+
+  @type instruction_record :: %{
+          String.t() => String.t()
+        }
+
+  @doc """
+  Downloads and loads the instruction fine-tuning dataset.
+
+  If `file_path` already exists, the local file is reused. Otherwise the JSON
+  file is downloaded from `url`, saved to `file_path`, and then decoded.
+
+  ## Input Parameters
+
+    * `file_path` - local JSON cache path. Defaults to
+      `"instruction-data.json"`.
+    * `url` - URL of the instruction dataset JSON. Defaults to the chapter 7
+      instruction-data file from the LLMs-from-scratch repository.
+
+  ## Output
+
+  Returns the decoded JSON as a list of maps with string keys. Each decoded
+  instruction map contains:
+
+    * `"instruction"` - the task description or question.
+    * `"input"` - optional context for the task. This is an empty string when
+      no extra input is provided.
+    * `"output"` - the expected response used as the supervised fine-tuning
+      target.
+  """
+  @spec download_and_load_instructions_file(Path.t(), String.t()) :: [instruction_record()]
+  def download_and_load_instructions_file(
+        file_path \\ @instruction_data_path,
+        url \\ @instruction_data_url
+      ) do
+    unless File.exists?(file_path) do
+      File.mkdir_p!(Path.dirname(file_path))
+      download_file!(url, file_path)
+    end
+
+    file_path
+    |> File.read!()
+    |> Jason.decode!()
+  end
+
+  @doc """
+  Formats an instruction dataset entry as an Alpaca-style model input.
+
+  This mirrors the chapter 7 prompt template:
+
+      Below is an instruction that describes a task. Write a response that
+      appropriately completes the request.
+
+      ### Instruction:
+      ...
+
+      ### Input:
+      ...
+
+  The input section is included only when the entry's `"input"` field is not an
+  empty string.
+
+  ## Input Parameters
+
+    * `entry` - map containing string keys `"instruction"` and `"input"`, such
+      as records returned by `download_and_load_instructions_file/2`.
+
+  ## Output
+
+  Returns the formatted prompt string without the desired response.
+  """
+  @spec format_input(instruction_record()) :: String.t()
+  def format_input(%{"instruction" => instruction, "input" => input})
+      when is_binary(instruction) and is_binary(input) do
+    instruction_text =
+      "Below is an instruction that describes a task. " <>
+        "Write a response that appropriately completes the request." <>
+        "\n\n### Instruction:\n#{instruction}"
+
+    input_text =
+      if input == "" do
+        ""
+      else
+        "\n\n### Input:\n#{input}"
+      end
+
+    instruction_text <> input_text
+  end
 
   @doc """
   Downloads and extracts the UCI SMS spam dataset if the TSV is not present.
