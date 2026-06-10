@@ -91,13 +91,13 @@ defmodule LlmFromScratch7Test do
     assert InstructionDataset.length(dataset) == 1
   end
 
-  test "7.2 custom collate draft pads batch inputs" do
+  test "7.2 custom collate pads batch inputs" do
     inputs_1 = [0, 1, 2, 3, 4]
     inputs_2 = [5, 6]
     inputs_3 = [7, 8, 9]
     batch = {inputs_1, inputs_2, inputs_3}
 
-    inputs_tensor = InstructionDataset.custom_collate_draft_1(batch)
+    {inputs_tensor, _targets_tensor} = InstructionDataset.custom_collate(batch)
 
     assert inputs_tensor ==
              Nx.tensor(
@@ -105,6 +105,35 @@ defmodule LlmFromScratch7Test do
                  [0, 1, 2, 3, 4],
                  [5, 6, 50_256, 50_256, 50_256],
                  [7, 8, 9, 50_256, 50_256]
+               ],
+               type: {:s, 64}
+             )
+  end
+
+  test "7.3 custom collate creates shifted targets" do
+    inputs_1 = [0, 1, 2, 3, 4]
+    inputs_2 = [5, 6]
+    inputs_3 = [7, 8, 9]
+    batch = {inputs_1, inputs_2, inputs_3}
+
+    {inputs, targets} = InstructionDataset.custom_collate(batch)
+
+    assert inputs ==
+             Nx.tensor(
+               [
+                 [0, 1, 2, 3, 4],
+                 [5, 6, 50_256, 50_256, 50_256],
+                 [7, 8, 9, 50_256, 50_256]
+               ],
+               type: {:s, 64}
+             )
+
+    assert targets ==
+             Nx.tensor(
+               [
+                 [1, 2, 3, 4, 50_256],
+                 [6, 50_256, 50_256, 50_256, 50_256],
+                 [8, 9, 50_256, 50_256, 50_256]
                ],
                type: {:s, 64}
              )

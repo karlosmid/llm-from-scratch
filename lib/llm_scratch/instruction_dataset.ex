@@ -150,20 +150,22 @@ defmodule LlmScratch.InstructionDataset do
   end
 
   @doc """
-  Pads a batch of token-id sequences and stacks them into an input tensor.
+  Pads a batch of token-id sequences and creates input/target tensors.
 
-  This mirrors the first draft of the chapter 7 Python collate function:
+  This mirrors the second draft of the chapter 7 Python collate function:
 
       inputs_1 = [0, 1, 2, 3, 4]
       inputs_2 = [5, 6]
       inputs_3 = [7, 8, 9]
       batch = (inputs_1, inputs_2, inputs_3)
-      print(custom_collate_draft_1(batch))
+      inputs, targets = custom_collate(batch)
+      print(inputs)
+      print(targets)
 
   The function finds the longest sequence length in the batch after adding one
-  extra pad token, pads every item to that length, then drops the final token
-  from each row before stacking the rows. This draft returns only the input
-  tensor; it does not build shifted targets yet.
+  extra pad token, pads every item to that length, then creates next-token
+  prediction pairs. Inputs drop the final token from each padded row; targets
+  drop the first token.
 
   ## Input Parameters
 
@@ -175,13 +177,13 @@ defmodule LlmScratch.InstructionDataset do
 
   ## Output
 
-  Returns a signed 64-bit Nx tensor with shape
-  `{batch_size, max_sequence_length}`.
+  Returns `{inputs, targets}` where both values are signed 64-bit Nx tensors
+  with shape `{batch_size, max_sequence_length}`.
 
   ## Examples
 
       iex> batch = {[0, 1, 2, 3, 4], [5, 6], [7, 8, 9]}
-      iex> inputs = LlmScratch.InstructionDataset.custom_collate_draft_1(batch)
+      iex> {inputs, targets} = LlmScratch.InstructionDataset.custom_collate(batch)
       iex> inputs
       #Nx.Tensor<
         s64[3][5]
@@ -191,26 +193,35 @@ defmodule LlmScratch.InstructionDataset do
           [7, 8, 9, 50256, 50256]
         ]
       >
+      iex> targets
+      #Nx.Tensor<
+        s64[3][5]
+        [
+          [1, 2, 3, 4, 50256],
+          [6, 50256, 50256, 50256, 50256],
+          [8, 9, 50256, 50256, 50256]
+        ]
+      >
   """
-  @spec custom_collate_draft_1(tuple() | [[integer()]], integer(), String.t()) ::
-          Nx.Tensor.t()
-  def custom_collate_draft_1(batch, pad_token_id \\ @pad_token_id, device \\ "cpu")
+  @spec custom_collate(tuple() | [[integer()]], integer(), String.t()) ::
+          {Nx.Tensor.t(), Nx.Tensor.t()}
+  def custom_collate(batch, pad_token_id \\ @pad_token_id, device \\ "cpu")
 
-  def custom_collate_draft_1(batch, pad_token_id, device) when is_tuple(batch) do
+  def custom_collate(batch, pad_token_id, device) when is_tuple(batch) do
     batch
     |> Tuple.to_list()
-    |> custom_collate_draft_1(pad_token_id, device)
+    |> custom_collate(pad_token_id, device)
   end
 
-  def custom_collate_draft_1(batch, pad_token_id, _device) when is_list(batch) do
+  def custom_collate(batch, pad_token_id, _device) when is_list(batch) do
     # Find the longest sequence length after the one extra pad token that the
-    # Python draft appends to every item.
+    # Python collate function appends to every item.
     batch_max_length =
       batch
       |> Enum.map(&(Kernel.length(&1) + 1))
       |> Enum.max(fn -> 0 end)
 
-    inputs =
+    {inputs, targets} =
       Enum.map(batch, fn item ->
         # Elixir data is immutable, so this builds the equivalent of
         # `new_item = item.copy(); new_item += [pad_token_id]`.
@@ -219,12 +230,19 @@ defmodule LlmScratch.InstructionDataset do
         # Pad the copied item to the longest sequence length in the batch.
         padded = pad_to_length(new_item, batch_max_length, pad_token_id)
 
-        # Match `torch.tensor(padded[:-1])` by dropping the final token before
-        # stacking all rows into a single tensor.
-        Enum.slice(padded, 0, batch_max_length - 1)
+        # Match `padded[:-1]` for inputs and `padded[1:]` for next-token
+        # targets before stacking all rows into tensors.
+        {
+          Enum.slice(padded, 0, batch_max_length - 1),
+          Enum.slice(padded, 1, batch_max_length - 1)
+        }
       end)
+      |> Enum.unzip()
 
-    Nx.tensor(inputs, type: {:s, 64})
+    {
+      Nx.tensor(inputs, type: {:s, 64}),
+      Nx.tensor(targets, type: {:s, 64})
+    }
   end
 
   defp full_text(%{"output" => output} = entry) when is_binary(output) do
