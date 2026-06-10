@@ -152,26 +152,32 @@ defmodule LlmScratch.InstructionDataset do
   @doc """
   Pads a batch of token-id sequences and creates input/target tensors.
 
-  This mirrors the second draft of the chapter 7 Python collate function:
+  This mirrors the chapter 7 Python collate function:
 
       inputs_1 = [0, 1, 2, 3, 4]
       inputs_2 = [5, 6]
       inputs_3 = [7, 8, 9]
       batch = (inputs_1, inputs_2, inputs_3)
-      inputs, targets = custom_collate(batch)
+      inputs, targets = custom_collate_fn(batch)
       print(inputs)
       print(targets)
 
   The function finds the longest sequence length in the batch after adding one
   extra pad token, pads every item to that length, then creates next-token
   prediction pairs. Inputs drop the final token from each padded row; targets
-  drop the first token.
+  drop the first token. In target rows, all padding tokens after the first one
+  are replaced with `ignore_index` so they do not contribute to the loss.
 
   ## Input Parameters
 
     * `batch` - tuple or list of token-id lists.
     * `pad_token_id` - token id used for padding. Defaults to GPT-2's
       end-of-text token id, `50256`.
+    * `ignore_index` - label value used for ignored target positions. Defaults
+      to `-100`.
+    * `allowed_max_length` - optional maximum row length after inputs and
+      targets are created. Defaults to `nil`, which keeps the full batch
+      length.
     * `device` - included for parity with the Python example. Nx places the
       tensor on the active backend, so this argument is currently informational.
 
@@ -198,22 +204,36 @@ defmodule LlmScratch.InstructionDataset do
         s64[3][5]
         [
           [1, 2, 3, 4, 50256],
-          [6, 50256, 50256, 50256, 50256],
-          [8, 9, 50256, 50256, 50256]
+          [6, 50256, -100, -100, -100],
+          [8, 9, 50256, -100, -100]
         ]
       >
   """
-  @spec custom_collate(tuple() | [[integer()]], integer(), String.t()) ::
+  @spec custom_collate(
+          tuple() | [[integer()]],
+          integer(),
+          integer(),
+          nil | pos_integer(),
+          String.t()
+        ) ::
           {Nx.Tensor.t(), Nx.Tensor.t()}
-  def custom_collate(batch, pad_token_id \\ @pad_token_id, device \\ "cpu")
+  def custom_collate(
+        batch,
+        pad_token_id \\ @pad_token_id,
+        ignore_index \\ -100,
+        allowed_max_length \\ nil,
+        device \\ "cpu"
+      )
 
-  def custom_collate(batch, pad_token_id, device) when is_tuple(batch) do
+  def custom_collate(batch, pad_token_id, ignore_index, allowed_max_length, device)
+      when is_tuple(batch) do
     batch
     |> Tuple.to_list()
-    |> custom_collate(pad_token_id, device)
+    |> custom_collate(pad_token_id, ignore_index, allowed_max_length, device)
   end
 
-  def custom_collate(batch, pad_token_id, _device) when is_list(batch) do
+  def custom_collate(batch, pad_token_id, ignore_index, allowed_max_length, _device)
+      when is_list(batch) do
     # Find the longest sequence length after the one extra pad token that the
     # Python collate function appends to every item.
     batch_max_length =
@@ -231,10 +251,18 @@ defmodule LlmScratch.InstructionDataset do
         padded = pad_to_length(new_item, batch_max_length, pad_token_id)
 
         # Match `padded[:-1]` for inputs and `padded[1:]` for next-token
-        # targets before stacking all rows into tensors.
+        # targets.
+        inputs = Enum.slice(padded, 0, batch_max_length - 1)
+
+        targets =
+          padded
+          |> Enum.slice(1, batch_max_length - 1)
+          |> mask_extra_padding_targets(pad_token_id, ignore_index)
+
+        # Optionally cap both rows to the model context length.
         {
-          Enum.slice(padded, 0, batch_max_length - 1),
-          Enum.slice(padded, 1, batch_max_length - 1)
+          maybe_truncate(inputs, allowed_max_length),
+          maybe_truncate(targets, allowed_max_length)
         }
       end)
       |> Enum.unzip()
@@ -261,4 +289,23 @@ defmodule LlmScratch.InstructionDataset do
   defp pad_to_length(token_ids, max_length, pad_token_id) do
     token_ids ++ List.duplicate(pad_token_id, max_length - Kernel.length(token_ids))
   end
+
+  defp mask_extra_padding_targets(targets, pad_token_id, ignore_index) do
+    {masked_targets, _seen_first_pad?} =
+      Enum.map_reduce(targets, false, fn
+        ^pad_token_id, false ->
+          {pad_token_id, true}
+
+        ^pad_token_id, true ->
+          {ignore_index, true}
+
+        token_id, seen_first_pad? ->
+          {token_id, seen_first_pad?}
+      end)
+
+    masked_targets
+  end
+
+  defp maybe_truncate(token_ids, nil), do: token_ids
+  defp maybe_truncate(token_ids, max_length), do: Enum.take(token_ids, max_length)
 end

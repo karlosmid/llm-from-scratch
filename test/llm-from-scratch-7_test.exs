@@ -110,7 +110,7 @@ defmodule LlmFromScratch7Test do
              )
   end
 
-  test "7.3 custom collate creates shifted targets" do
+  test "7.3 custom collate creates shifted targets with ignored padding" do
     inputs_1 = [0, 1, 2, 3, 4]
     inputs_2 = [5, 6]
     inputs_3 = [7, 8, 9]
@@ -132,8 +132,8 @@ defmodule LlmFromScratch7Test do
              Nx.tensor(
                [
                  [1, 2, 3, 4, 50_256],
-                 [6, 50_256, 50_256, 50_256, 50_256],
-                 [8, 9, 50_256, 50_256, 50_256]
+                 [6, 50_256, -100, -100, -100],
+                 [8, 9, 50_256, -100, -100]
                ],
                type: {:s, 64}
              )
