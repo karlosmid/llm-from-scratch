@@ -1,7 +1,17 @@
 defmodule LlmFromScratch7Test do
   use ExUnit.Case
 
-  alias LlmScratch.{DataLoader, FineTuneDataLoader, InstructionDataset, LossUtils}
+  import LlmScratch.TestHelpers
+
+  alias LlmScratch.{
+    DataLoader,
+    FineTuneDataLoader,
+    GPT2OpenAI,
+    InstructionDataset,
+    LossUtils,
+    TextGeneration,
+    TextUtils
+  }
 
   @instruction_data_url "https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch07/01_main-chapter-code/instruction-data.json"
 
@@ -239,7 +249,6 @@ defmodule LlmFromScratch7Test do
     assert [{val_inputs, val_targets} | _] = val_loader.batches
     assert [{test_inputs, test_targets} | _] = test_loader.batches
 
-
     # As we are randomly shuffle data before creating batches, we got different result than in the book
     assert Nx.shape(train_inputs) == {8, 91}
     assert Nx.shape(train_targets) == {8, 91}
@@ -247,5 +256,62 @@ defmodule LlmFromScratch7Test do
     assert Nx.shape(val_targets) == {8, 74}
     assert Nx.shape(test_inputs) == {8, 64}
     assert Nx.shape(test_targets) == {8, 64}
+  end
+
+  @tag :download
+  @tag timeout: 3_600_000
+  test "7.5 generates response for validation instruction with OpenAI GPT-2 355M" do
+    use_accelerated_backend()
+
+    tokenizer = "code-davinci-002"
+    model = GPT2OpenAI.load_model("355M", models_dir: "gpt2")
+
+    file_path =
+      System.tmp_dir!()
+      |> Path.join("llm_scratch_instruction_data")
+      |> Path.join("instruction-data.json")
+
+    data =
+      FineTuneDataLoader.download_and_load_instructions_file(
+        file_path,
+        @instruction_data_url
+      )
+
+    train_portion = trunc(length(data) * 0.85)
+    test_portion = trunc(length(data) * 0.1)
+    val_portion = length(data) - train_portion - test_portion
+    val_data = Enum.slice(data, train_portion + test_portion, val_portion)
+
+    input_text =
+      val_data
+      |> List.first()
+      |> FineTuneDataLoader.format_input()
+
+    token_ids =
+      TextGeneration.generate(
+        model,
+        TextUtils.text_to_token_ids(input_text, tokenizer),
+        35,
+        model.cfg.context_length,
+        0.0,
+        nil,
+        50_256
+      )
+      |> Nx.backend_transfer(Nx.BinaryBackend)
+
+    generated_text = TextUtils.token_ids_to_text(token_ids, tokenizer)
+
+    response_text =
+      generated_text |> String.slice(String.length(input_text)..-1//1) |> String.trim()
+
+    assert model.cfg.context_length == 1024
+    assert model.cfg.emb_dim == 1024
+    assert model.cfg.n_layers == 24
+    assert model.cfg.n_heads == 16
+    assert input_text == FineTuneDataLoader.format_input(List.first(val_data))
+    assert String.starts_with?(generated_text, input_text)
+
+    assert response_text ==
+             "### Response:\n\nThe chef cooks the meal every day.\n\n### Instruction:\n\nConvert the active sentence to passive: 'The chef cooks the"
   end
 end
