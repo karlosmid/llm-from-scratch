@@ -10,24 +10,30 @@ defmodule LlmScratch.DataLoader do
   - `:shuffle` - whether batches are shuffled
   - `:drop_last` - whether incomplete batches are dropped
   - `:num_workers` - concurrency used by `iterate/2`
+  - `:collate_fn` - function used to transform each list of examples into a
+    batch. Defaults to keeping the list unchanged.
 
   ## Options
   - `:batch_size` - number of samples per batch (default: `32`)
   - `:shuffle` - shuffles dataset once before cycling (default: `true`)
   - `:drop_last` - drops batches smaller than `:batch_size` (default: `false`)
   - `:num_workers` - parallel workers for iteration (default: `0`)
+  - `:collate_fn` - one-argument function called for each batch after
+    chunking and `:drop_last` filtering. Defaults to identity.
   """
   def new(dataset, opts \\ []) when is_list(dataset) do
     batch_size = Keyword.get(opts, :batch_size, 32)
     shuffle = Keyword.get(opts, :shuffle, true)
     drop_last = Keyword.get(opts, :drop_last, false)
     num_workers = Keyword.get(opts, :num_workers, 0)
+    collate_fn = Keyword.get(opts, :collate_fn, &identity/1)
 
     batches =
       dataset
       |> prepare_dataset(shuffle)
       |> Stream.chunk_every(batch_size)
       |> filter_incomplete_batches(drop_last, batch_size)
+      |> Stream.map(collate_fn)
       |> Enum.to_list()
 
     stream = Stream.cycle(batches)
@@ -39,7 +45,8 @@ defmodule LlmScratch.DataLoader do
       batch_size: batch_size,
       shuffle: shuffle,
       drop_last: drop_last,
-      num_workers: num_workers
+      num_workers: num_workers,
+      collate_fn: collate_fn
     }
   end
 
@@ -76,4 +83,6 @@ defmodule LlmScratch.DataLoader do
   defp filter_incomplete_batches(stream, false, _batch_size) do
     stream
   end
+
+  defp identity(batch), do: batch
 end

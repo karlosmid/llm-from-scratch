@@ -1,7 +1,7 @@
 defmodule LlmFromScratch7Test do
   use ExUnit.Case
 
-  alias LlmScratch.{FineTuneDataLoader, InstructionDataset, LossUtils}
+  alias LlmScratch.{DataLoader, FineTuneDataLoader, InstructionDataset, LossUtils}
 
   @instruction_data_url "https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch07/01_main-chapter-code/instruction-data.json"
 
@@ -165,5 +165,87 @@ defmodule LlmFromScratch7Test do
     assert_in_delta Nx.to_number(loss_1), 1.1269, 1.0e-4
     assert_in_delta Nx.to_number(loss_2), 0.7936, 1.0e-4
     assert Nx.equal(loss_1, loss_3) |> Nx.to_number() == 1
+  end
+
+  @tag :download
+  test "7.4 creates instruction data loaders with custom collate function" do
+    tokenizer = "code-davinci-002"
+    batch_size = 8
+    num_workers = 3
+    :rand.seed(:exsss, {123, 123, 123})
+
+    file_path =
+      System.tmp_dir!()
+      |> Path.join("llm_scratch_instruction_data")
+      |> Path.join("instruction-data.json")
+
+    data =
+      FineTuneDataLoader.download_and_load_instructions_file(
+        file_path,
+        @instruction_data_url
+      )
+
+    train_portion = trunc(length(data) * 0.85)
+    test_portion = trunc(length(data) * 0.1)
+    val_portion = length(data) - train_portion - test_portion
+
+    train_data = Enum.slice(data, 0, train_portion)
+    test_data = Enum.slice(data, train_portion, test_portion)
+    val_data = Enum.slice(data, train_portion + test_portion, val_portion)
+
+    train_dataset = InstructionDataset.new(train_data, tokenizer)
+    val_dataset = InstructionDataset.new(val_data, tokenizer)
+    test_dataset = InstructionDataset.new(test_data, tokenizer)
+
+    train_loader =
+      DataLoader.new(train_dataset.encoded_texts,
+        batch_size: batch_size,
+        collate_fn: &InstructionDataset.custom_collate/1,
+        shuffle: true,
+        drop_last: true,
+        num_workers: num_workers
+      )
+
+    val_loader =
+      DataLoader.new(val_dataset.encoded_texts,
+        batch_size: batch_size,
+        collate_fn: &InstructionDataset.custom_collate/1,
+        shuffle: false,
+        drop_last: false,
+        num_workers: num_workers
+      )
+
+    test_loader =
+      DataLoader.new(test_dataset.encoded_texts,
+        batch_size: batch_size,
+        collate_fn: &InstructionDataset.custom_collate/1,
+        shuffle: false,
+        drop_last: false,
+        num_workers: num_workers
+      )
+
+    assert InstructionDataset.length(train_dataset) == 935
+    assert InstructionDataset.length(val_dataset) == 55
+    assert InstructionDataset.length(test_dataset) == 110
+
+    assert train_loader.length == 116
+    assert val_loader.length == 7
+    assert test_loader.length == 14
+    assert train_loader.num_workers == 3
+    assert val_loader.num_workers == 3
+    assert test_loader.num_workers == 3
+
+    assert [{train_inputs, train_targets} | _] = train_loader.batches
+    assert [{val_inputs, val_targets} | _] = val_loader.batches
+    assert [{test_inputs, test_targets} | _] = test_loader.batches
+
+
+    # As we are randomly shuffle data before creating batches, we got different result than in the book
+    assert Nx.shape(train_inputs) == {8, 91}
+    assert Nx.shape(train_targets) == {8, 91}
+    assert Nx.shape(val_inputs) == {8, 74}
+    assert Nx.shape(val_targets) == {8, 74}
+    assert Nx.shape(test_inputs) == {8, 64}
+    assert Nx.shape(test_targets) == {8, 64}
   end
 end
