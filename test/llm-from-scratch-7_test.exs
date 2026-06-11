@@ -8,6 +8,7 @@ defmodule LlmFromScratch7Test do
     FineTuneDataLoader,
     GPT2OpenAI,
     InstructionDataset,
+    InstructionsEvaluation,
     LossUtils,
     ModelCheckpoint,
     TextGeneration,
@@ -261,6 +262,7 @@ defmodule LlmFromScratch7Test do
   end
 
   @tag :download
+  @tag :train_long
   @tag timeout: 3_600_000
   test "7.5 and 7.6 evaluates and trains OpenAI GPT-2 355M on instruction data" do
     device = use_accelerated_backend()
@@ -398,6 +400,89 @@ defmodule LlmFromScratch7Test do
     assert Enum.all?(tokens_seen, &is_integer/1)
     assert tokens_seen == Enum.sort(tokens_seen)
     assert List.last(tokens_seen) > List.first(tokens_seen)
+  end
+
+  @tag :train
+  @tag timeout: 900_000
+  test "7.7 evaluates fine-tuned instruction model on first test samples" do
+    checkpoint_path = "ch7_instruction_finetuned_gpt2_355m_model_and_optimizer.nx"
+
+    assert File.exists?(checkpoint_path)
+
+    device = use_accelerated_backend()
+    tokenizer = "code-davinci-002"
+    :rand.seed(:exsss, {123, 123, 123})
+
+    %{model_state_dict: model} = ModelCheckpoint.load_training_state!(checkpoint_path)
+    model = Nx.backend_transfer(model, device)
+
+    file_path =
+      System.tmp_dir!()
+      |> Path.join("llm_scratch_instruction_data")
+      |> Path.join("instruction-data.json")
+
+    data =
+      FineTuneDataLoader.download_and_load_instructions_file(
+        file_path,
+        @instruction_data_url
+      )
+
+    train_portion = trunc(length(data) * 0.85)
+    test_portion = trunc(length(data) * 0.1)
+    test_data = Enum.slice(data, train_portion, test_portion)
+
+    expected_samples = [
+      %{
+        input_text:
+          "Below is an instruction that describes a task. " <>
+            "Write a response that appropriately completes the request." <>
+            "\n\n### Instruction:\nRewrite the sentence using a simile." <>
+            "\n\n### Input:\nThe car is very fast.",
+        correct_response: "The car is as fast as lightning.",
+        model_response: "The car is as fast as a cheetah."
+      },
+      %{
+        input_text:
+          "Below is an instruction that describes a task. " <>
+            "Write a response that appropriately completes the request." <>
+            "\n\n### Instruction:\nWhat type of cloud is typically associated with thunderstorms?",
+        correct_response:
+          "The type of cloud typically associated with thunderstorms is cumulonimbus.",
+        model_response:
+          "A thunderstorm is a type of cloud that typically forms when thunderstorms produce a dense, convective layer of air that is at least 10 miles thick."
+      },
+      %{
+        input_text:
+          "Below is an instruction that describes a task. " <>
+            "Write a response that appropriately completes the request." <>
+            "\n\n### Instruction:\nName the author of 'Pride and Prejudice'.",
+        correct_response: "Jane Austen.",
+        model_response: "The author of 'Pride and Prejudice' is Jane Austen."
+      }
+    ]
+
+    output_path =
+      System.tmp_dir!()
+      |> Path.join("instruction-data-with-response.json")
+
+    enriched_data =
+      test_data
+      |> Enum.take(3)
+      |> InstructionsEvaluation.write_responses!(model, tokenizer, device,
+        output_path: output_path
+      )
+
+    assert File.exists?(output_path)
+
+    enriched_data
+    |> Enum.zip(expected_samples)
+    |> Enum.each(fn {entry, expected} ->
+      input_text = FineTuneDataLoader.format_input(entry)
+
+      assert input_text == expected.input_text
+      assert entry["output"] == expected.correct_response
+      assert entry["model_response"] == expected.model_response
+    end)
   end
 
   defp binary_instruction_collate(batch) do
