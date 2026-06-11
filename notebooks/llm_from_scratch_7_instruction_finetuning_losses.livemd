@@ -1,0 +1,149 @@
+# LLM from Scratch 7 Instruction Fine-Tuning Losses
+
+```elixir
+project_path = Path.expand("..", __DIR__)
+
+Mix.install(
+  [
+    {:jason, "~> 1.4"},
+    {:kino, "~> 0.12"},
+    {:kino_vega_lite, "~> 0.1.11"},
+    {:vega_lite, "~> 0.1.9"}
+  ],
+  consolidate_protocols: false
+)
+```
+
+## Load metrics
+
+Run the chapter 7 fine-tuning test first to generate
+`ch7_instruction_finetuning_metrics.json`.
+
+```elixir
+metrics_path = Path.join(project_path, "ch7_instruction_finetuning_metrics.json")
+
+unless File.exists?(metrics_path) do
+  raise """
+  Expected instruction fine-tuning metrics at #{metrics_path}.
+
+  Generate it with:
+
+      mix test test/llm-from-scratch-7_test.exs:264
+  """
+end
+
+metrics =
+  metrics_path
+  |> File.read!()
+  |> Jason.decode!()
+
+losses = metrics["losses"]
+train_losses = losses["train_values"]
+val_losses = losses["val_values"]
+tokens_seen = losses["tokens_seen"]
+num_epochs = metrics["num_epochs"]
+
+%{
+  metrics_path: metrics_path,
+  num_epochs: num_epochs,
+  train_loss_points: length(train_losses),
+  validation_loss_points: length(val_losses),
+  first_tokens_seen: List.first(tokens_seen),
+  last_tokens_seen: List.last(tokens_seen)
+}
+```
+
+## Plot losses
+
+```elixir
+alias VegaLite, as: Vl
+
+defmodule InstructionFineTuningLossPlot do
+  def plot_losses(num_epochs, tokens_seen, train_losses, val_losses) do
+    epochs_seen = epochs_seen(num_epochs, length(train_losses))
+
+    loss_data =
+      [
+        {"Training loss", train_losses},
+        {"Validation loss", val_losses}
+      ]
+      |> Enum.flat_map(fn {series, losses} ->
+        Enum.zip([epochs_seen, tokens_seen, losses])
+        |> Enum.map(fn {epoch, tokens, loss} ->
+          %{
+            series: series,
+            epoch: epoch,
+            tokens_seen: tokens,
+            loss: loss
+          }
+        end)
+      end)
+
+    token_axis_data =
+      Enum.zip([epochs_seen, tokens_seen, train_losses])
+      |> Enum.map(fn {epoch, tokens, loss} ->
+        %{
+          epoch: epoch,
+          tokens_seen: tokens,
+          loss: loss
+        }
+      end)
+
+    epoch_layer =
+      Vl.new()
+      |> Vl.data_from_values(loss_data)
+      |> Vl.mark(:line)
+      |> Vl.encode_field(:x, "epoch",
+        type: :quantitative,
+        title: "Epochs",
+        axis: [tick_min_step: 1]
+      )
+      |> Vl.encode_field(:y, "loss", type: :quantitative, title: "Loss")
+      |> Vl.encode_field(:color, "series", type: :nominal, title: nil)
+      |> Vl.encode_field(:stroke_dash, "series", type: :nominal, title: nil)
+
+    tokens_layer =
+      Vl.new()
+      |> Vl.data_from_values(token_axis_data)
+      |> Vl.mark(:line, opacity: 0)
+      |> Vl.encode_field(:x, "tokens_seen",
+        type: :quantitative,
+        title: "Tokens seen",
+        axis: [orient: "top"]
+      )
+      |> Vl.encode_field(:y, "loss", type: :quantitative, title: "Loss")
+
+    Vl.new(width: 650, height: 350)
+    |> Vl.layers([epoch_layer, tokens_layer])
+    |> Vl.resolve(:scale, x: :independent, y: :shared)
+    |> Kino.VegaLite.new()
+  end
+
+  defp epochs_seen(_num_epochs, 0), do: []
+  defp epochs_seen(_num_epochs, 1), do: [0.0]
+
+  defp epochs_seen(num_epochs, count) do
+    0..(count - 1)
+    |> Enum.map(fn step ->
+      step * num_epochs / (count - 1)
+    end)
+  end
+end
+
+InstructionFineTuningLossPlot.plot_losses(
+  num_epochs,
+  tokens_seen,
+  train_losses,
+  val_losses
+)
+```
+
+## Latest point
+
+```elixir
+[
+  tokens_seen: List.last(tokens_seen),
+  training_loss: List.last(train_losses),
+  validation_loss: List.last(val_losses)
+]
+```

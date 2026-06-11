@@ -9,8 +9,10 @@ defmodule LlmFromScratch7Test do
     GPT2OpenAI,
     InstructionDataset,
     LossUtils,
+    ModelCheckpoint,
     TextGeneration,
-    TextUtils
+    TextUtils,
+    Training
   }
 
   @instruction_data_url "https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch07/01_main-chapter-code/instruction-data.json"
@@ -260,7 +262,7 @@ defmodule LlmFromScratch7Test do
 
   @tag :download
   @tag timeout: 3_600_000
-  test "7.5 generates response for validation instruction with OpenAI GPT-2 355M" do
+  test "7.5 and 7.6 evaluates and trains OpenAI GPT-2 355M on instruction data" do
     device = use_accelerated_backend()
 
     tokenizer = "code-davinci-002"
@@ -297,7 +299,7 @@ defmodule LlmFromScratch7Test do
     train_loader =
       DataLoader.new(train_dataset.encoded_texts,
         batch_size: batch_size,
-        collate_fn: &InstructionDataset.custom_collate/1,
+        collate_fn: &binary_instruction_collate/1,
         shuffle: true,
         drop_last: true,
         num_workers: num_workers
@@ -306,7 +308,7 @@ defmodule LlmFromScratch7Test do
     val_loader =
       DataLoader.new(val_dataset.encoded_texts,
         batch_size: batch_size,
-        collate_fn: &InstructionDataset.custom_collate/1,
+        collate_fn: &binary_instruction_collate/1,
         shuffle: false,
         drop_last: false,
         num_workers: num_workers
@@ -350,5 +352,82 @@ defmodule LlmFromScratch7Test do
 
     assert response_text ==
              "### Response:\n\nThe chef cooks the meal every day.\n\n### Instruction:\n\nConvert the active sentence to passive: 'The chef cooks the"
+
+    num_epochs = 2
+    optimizer = Training.adamw(0.00005, weight_decay: 0.1)
+
+    {trained_model, trained_optimizer, train_losses, val_losses, tokens_seen} =
+      Training.train_model_simple(
+        model,
+        train_loader,
+        val_loader,
+        optimizer,
+        device,
+        num_epochs,
+        5,
+        5,
+        input_text,
+        tokenizer,
+        generate_samples: true,
+        return_optimizer: true
+      )
+
+    checkpoint_path = "ch7_instruction_finetuned_gpt2_355m_model_and_optimizer.nx"
+    ModelCheckpoint.save_training_state!(trained_model, trained_optimizer, checkpoint_path)
+
+    metrics_path = "ch7_instruction_finetuning_metrics.json"
+
+    write_instruction_training_metrics!(
+      metrics_path,
+      num_epochs,
+      train_losses,
+      val_losses,
+      tokens_seen
+    )
+
+    assert trained_model.__struct__ == model.__struct__
+    assert %Training.AdamW{} = trained_optimizer
+    assert File.exists?(checkpoint_path)
+    assert File.stat!(checkpoint_path).size > 0
+    assert File.exists?(metrics_path)
+    assert File.stat!(metrics_path).size > 0
+    assert length(train_losses) == 47
+    assert length(val_losses) == 47
+    assert length(tokens_seen) == 47
+    assert Enum.all?(train_losses ++ val_losses, &is_float/1)
+    assert Enum.all?(tokens_seen, &is_integer/1)
+    assert tokens_seen == Enum.sort(tokens_seen)
+    assert List.last(tokens_seen) > List.first(tokens_seen)
+  end
+
+  defp binary_instruction_collate(batch) do
+    previous_backend = Nx.default_backend()
+
+    try do
+      Nx.default_backend(Nx.BinaryBackend)
+      InstructionDataset.custom_collate(batch)
+    after
+      Nx.default_backend(previous_backend)
+    end
+  end
+
+  defp write_instruction_training_metrics!(
+         path,
+         num_epochs,
+         train_losses,
+         val_losses,
+         tokens_seen
+       ) do
+    metrics = %{
+      num_epochs: num_epochs,
+      losses: %{
+        tokens_seen: tokens_seen,
+        train_values: train_losses,
+        val_values: val_losses
+      }
+    }
+
+    {:ok, encoded_metrics} = Jason.encode(metrics, pretty: true)
+    File.write!(path, encoded_metrics)
   end
 end
