@@ -261,10 +261,16 @@ defmodule LlmFromScratch7Test do
   @tag :download
   @tag timeout: 3_600_000
   test "7.5 generates response for validation instruction with OpenAI GPT-2 355M" do
-    use_accelerated_backend()
+    device = use_accelerated_backend()
 
     tokenizer = "code-davinci-002"
-    model = GPT2OpenAI.load_model("355M", models_dir: "gpt2")
+    batch_size = 8
+    num_workers = 3
+
+    model =
+      "355M"
+      |> GPT2OpenAI.load_model(models_dir: "gpt2")
+      |> Nx.backend_transfer(device)
 
     file_path =
       System.tmp_dir!()
@@ -280,7 +286,34 @@ defmodule LlmFromScratch7Test do
     train_portion = trunc(length(data) * 0.85)
     test_portion = trunc(length(data) * 0.1)
     val_portion = length(data) - train_portion - test_portion
+    train_data = Enum.slice(data, 0, train_portion)
     val_data = Enum.slice(data, train_portion + test_portion, val_portion)
+
+    train_dataset = InstructionDataset.new(train_data, tokenizer)
+    val_dataset = InstructionDataset.new(val_data, tokenizer)
+
+    :rand.seed(:exsss, {123, 123, 123})
+
+    train_loader =
+      DataLoader.new(train_dataset.encoded_texts,
+        batch_size: batch_size,
+        collate_fn: &InstructionDataset.custom_collate/1,
+        shuffle: true,
+        drop_last: true,
+        num_workers: num_workers
+      )
+
+    val_loader =
+      DataLoader.new(val_dataset.encoded_texts,
+        batch_size: batch_size,
+        collate_fn: &InstructionDataset.custom_collate/1,
+        shuffle: false,
+        drop_last: false,
+        num_workers: num_workers
+      )
+
+    train_loss = LossUtils.calc_loss_loader(train_loader, model, device, 5)
+    val_loss = LossUtils.calc_loss_loader(val_loader, model, device, 5)
 
     input_text =
       val_data
@@ -290,7 +323,9 @@ defmodule LlmFromScratch7Test do
     token_ids =
       TextGeneration.generate(
         model,
-        TextUtils.text_to_token_ids(input_text, tokenizer),
+        input_text
+        |> TextUtils.text_to_token_ids(tokenizer)
+        |> Nx.backend_transfer(device),
         35,
         model.cfg.context_length,
         0.0,
@@ -308,6 +343,8 @@ defmodule LlmFromScratch7Test do
     assert model.cfg.emb_dim == 1024
     assert model.cfg.n_layers == 24
     assert model.cfg.n_heads == 16
+    assert_in_delta train_loss, 3.7422078609466554, 1.0e-5
+    assert_in_delta val_loss, 3.7619348049163817, 1.0e-5
     assert input_text == FineTuneDataLoader.format_input(List.first(val_data))
     assert String.starts_with?(generated_text, input_text)
 
