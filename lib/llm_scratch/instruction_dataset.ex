@@ -178,8 +178,6 @@ defmodule LlmScratch.InstructionDataset do
     * `allowed_max_length` - optional maximum row length after inputs and
       targets are created. Defaults to `nil`, which keeps the full batch
       length.
-    * `device` - included for parity with the Python example. Nx places the
-      tensor on the active backend, so this argument is currently informational.
 
   ## Output
 
@@ -213,26 +211,24 @@ defmodule LlmScratch.InstructionDataset do
           tuple() | [[integer()]],
           integer(),
           integer(),
-          nil | pos_integer(),
-          String.t()
+          nil | pos_integer()
         ) ::
           {Nx.Tensor.t(), Nx.Tensor.t()}
   def custom_collate(
         batch,
         pad_token_id \\ @pad_token_id,
         ignore_index \\ -100,
-        allowed_max_length \\ nil,
-        device \\ "cpu"
+        allowed_max_length \\ nil
       )
 
-  def custom_collate(batch, pad_token_id, ignore_index, allowed_max_length, device)
+  def custom_collate(batch, pad_token_id, ignore_index, allowed_max_length)
       when is_tuple(batch) do
     batch
     |> Tuple.to_list()
-    |> custom_collate(pad_token_id, ignore_index, allowed_max_length, device)
+    |> custom_collate(pad_token_id, ignore_index, allowed_max_length)
   end
 
-  def custom_collate(batch, pad_token_id, ignore_index, allowed_max_length, _device)
+  def custom_collate(batch, pad_token_id, ignore_index, allowed_max_length)
       when is_list(batch) do
     # Find the longest sequence length after the one extra pad token that the
     # Python collate function appends to every item.
