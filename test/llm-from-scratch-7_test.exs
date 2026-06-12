@@ -989,6 +989,116 @@ defmodule LlmFromScratch7Test do
     assert_in_delta average_score, 49.78, 0.4
   end
 
+  @tag :train_long
+  @tag timeout: 7_200_000
+  test "exercise 7.3 fine-tunes instruction model on Alpaca data" do
+    device = use_accelerated_backend()
+    tokenizer = "code-davinci-002"
+
+    model =
+      "355M"
+      |> GPT2OpenAI.load_model(models_dir: "gpt2")
+      |> Nx.backend_transfer(device)
+
+    alpaca_data = load_instruction_json!("alpaca_data.json")
+    %{train: train_data, val: val_data} = instruction_data_partitions(alpaca_data)
+
+    train_dataset = InstructionDataset.new(train_data, tokenizer)
+    val_dataset = InstructionDataset.new(val_data, tokenizer)
+
+    :rand.seed(:exsss, {123, 123, 123})
+
+    train_loader = instruction_data_loader(train_dataset, shuffle: true, drop_last: true)
+    val_loader = instruction_data_loader(val_dataset, shuffle: false, drop_last: false)
+
+    input_text = val_data |> List.first() |> FineTuneDataLoader.format_input()
+    optimizer = Training.adamw(0.00005, weight_decay: 0.1)
+    num_epochs = 1
+
+    {trained_model, trained_optimizer, train_losses, val_losses, tokens_seen} =
+      Training.train_model_simple(
+        model,
+        train_loader,
+        val_loader,
+        optimizer,
+        device,
+        num_epochs,
+        5,
+        5,
+        input_text,
+        tokenizer,
+        generate_samples: true,
+        return_optimizer: true
+      )
+
+    checkpoint_path = "ch7_instruction_finetuned_gpt2_355m_alpaca_model_and_optimizer.nx"
+    ModelCheckpoint.save_training_state!(trained_model, trained_optimizer, checkpoint_path)
+
+    metrics_path = "ch7_instruction_finetuning_alpaca_metrics.json"
+
+    write_instruction_training_metrics!(
+      metrics_path,
+      num_epochs,
+      train_losses,
+      val_losses,
+      tokens_seen
+    )
+
+    assert length(alpaca_data) > 50_000
+    assert trained_model.__struct__ == model.__struct__
+    assert %Training.AdamW{} = trained_optimizer
+    assert File.exists?(checkpoint_path)
+    assert File.stat!(checkpoint_path).size > 0
+    assert File.exists?(metrics_path)
+    assert File.stat!(metrics_path).size > 0
+    assert Enum.all?(train_losses ++ val_losses, &is_float/1)
+    assert Enum.all?(tokens_seen, &is_integer/1)
+  end
+
+  @tag :train
+  @tag :ollama
+  @tag timeout: 1_800_000
+  test "exercise 7.3 scores Alpaca instruction model with Ollama" do
+    assert OllamaUtils.ollama_running?()
+
+    checkpoint_path = "ch7_instruction_finetuned_gpt2_355m_alpaca_model_and_optimizer.nx"
+
+    assert File.exists?(checkpoint_path)
+
+    device = use_accelerated_backend()
+    tokenizer = "code-davinci-002"
+
+    %{model_state_dict: model} = ModelCheckpoint.load_training_state!(checkpoint_path)
+    model = Nx.backend_transfer(model, device)
+
+    alpaca_data = load_instruction_json!("alpaca_data.json")
+
+    test_data =
+      alpaca_data |> instruction_data_partitions() |> Map.fetch!(:test) |> Enum.take(110)
+
+    output_path = "alpaca-data-with-response.json"
+
+    enriched_data =
+      test_data
+      |> InstructionsEvaluation.write_responses!(model, tokenizer, device,
+        output_path: output_path
+      )
+
+    scores = InstructionsEvaluation.generate_model_scores(enriched_data, "model_response")
+    average_score = Enum.sum(scores) / length(scores)
+    metrics_path = "ch7_instruction_finetuning_alpaca_ollama_scores.json"
+
+    write_ollama_score_metrics!(metrics_path, scores, average_score)
+
+    assert File.exists?(output_path)
+    assert File.exists?(metrics_path)
+    assert length(enriched_data) == 110
+    assert length(scores) == 110
+    assert length(scores) == length(enriched_data)
+    assert average_score >= 0.0
+    assert average_score <= 100.0
+  end
+
   defp binary_instruction_collate(batch) do
     previous_backend = Nx.default_backend()
 
@@ -1008,6 +1118,24 @@ defmodule LlmFromScratch7Test do
       drop_last: Keyword.fetch!(opts, :drop_last),
       num_workers: 3
     )
+  end
+
+  defp load_instruction_json!(path) do
+    path
+    |> File.read!()
+    |> Jason.decode!()
+  end
+
+  defp instruction_data_partitions(data) do
+    train_portion = trunc(length(data) * 0.85)
+    test_portion = trunc(length(data) * 0.1)
+    val_portion = length(data) - train_portion - test_portion
+
+    %{
+      train: Enum.slice(data, 0, train_portion),
+      test: Enum.slice(data, train_portion, test_portion),
+      val: Enum.slice(data, train_portion + test_portion, val_portion)
+    }
   end
 
   defp write_instruction_training_metrics!(
