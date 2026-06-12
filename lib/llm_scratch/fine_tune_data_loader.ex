@@ -119,6 +119,36 @@ defmodule LlmScratch.FineTuneDataLoader do
   end
 
   @doc """
+  Formats an instruction dataset entry using the requested prompt style.
+
+  `:alpaca` delegates to `format_input/1`. `:phi3` mirrors the Phi-3 chat
+  prompt style shown in chapter 7:
+
+      <|user|>
+      ...
+      <|end|>
+      <|assistant|>
+
+  The returned string contains only the model input, not the expected response.
+  """
+  @spec format_text(instruction_record(), :alpaca | :phi3) :: String.t()
+  def format_text(entry, style \\ :alpaca)
+
+  def format_text(entry, :alpaca), do: format_input(entry)
+
+  def format_text(%{"instruction" => instruction, "input" => input}, :phi3)
+      when is_binary(instruction) and is_binary(input) do
+    user_text =
+      if input == "" do
+        instruction
+      else
+        instruction <> "\n" <> input
+      end
+
+    "<|user|>\n" <> user_text <> "\n<|end|>\n<|assistant|>\n"
+  end
+
+  @doc """
   Downloads and extracts the UCI SMS spam dataset if the TSV is not present.
 
   Accepts a keyword list of path and URL options.

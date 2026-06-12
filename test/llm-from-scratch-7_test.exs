@@ -101,8 +101,29 @@ defmodule LlmFromScratch7Test do
 
     assert dataset.data == [entry]
     assert dataset.encoded_texts == [expected_tokens]
+    assert dataset.prompt_style == :alpaca
     assert InstructionDataset.get(dataset, 0) == expected_tokens
     assert InstructionDataset.length(dataset) == 1
+
+    phi3_dataset = InstructionDataset.new([entry], tokenizer, prompt_style: :phi3)
+
+    expected_phi3_text =
+      "<|user|>\n" <>
+        "Classify the sentiment of the text.\n" <>
+        "I loved it.\n" <>
+        "<|end|>\n" <>
+        "<|assistant|>\n" <>
+        "Positive.\n" <>
+        "<|end|>"
+
+    {:ok, expected_phi3_tokens} =
+      Tiktoken.encode(tokenizer, expected_phi3_text, ["<|endoftext|>"])
+
+    assert phi3_dataset.data == [entry]
+    assert phi3_dataset.encoded_texts == [expected_phi3_tokens]
+    assert phi3_dataset.prompt_style == :phi3
+    assert InstructionDataset.get(phi3_dataset, 0) == expected_phi3_tokens
+    assert InstructionDataset.length(phi3_dataset) == 1
   end
 
   test "7.2 custom collate pads batch inputs" do
@@ -512,7 +533,8 @@ defmodule LlmFromScratch7Test do
       },
       %{
         output: "The type of cloud typically associated with thunderstorms is cumulonimbus.",
-        model_response: "A thunderstorm is a type of cloud that typically forms when thunderstorms produce a dense, convective layer of air that is at least 10 miles thick.",
+        model_response:
+          "A thunderstorm is a type of cloud that typically forms when thunderstorms produce a dense, convective layer of air that is at least 10 miles thick.",
         score: 20
       },
       %{
@@ -576,6 +598,194 @@ defmodule LlmFromScratch7Test do
     assert_in_delta average_score, 50.32, 0.4
   end
 
+  @tag :download
+  @tag :train_long
+  @tag timeout: 3_600_000
+  test "exercise 7.1 trains instruction model with Phi-3 prompt style" do
+    device = use_accelerated_backend()
+
+    tokenizer = "code-davinci-002"
+    batch_size = 8
+    num_workers = 3
+
+    model =
+      "355M"
+      |> GPT2OpenAI.load_model(models_dir: "gpt2")
+      |> Nx.backend_transfer(device)
+
+    file_path =
+      System.tmp_dir!()
+      |> Path.join("llm_scratch_instruction_data")
+      |> Path.join("instruction-data.json")
+
+    data =
+      FineTuneDataLoader.download_and_load_instructions_file(
+        file_path,
+        @instruction_data_url
+      )
+
+    train_portion = trunc(length(data) * 0.85)
+    test_portion = trunc(length(data) * 0.1)
+    val_portion = length(data) - train_portion - test_portion
+    train_data = Enum.slice(data, 0, train_portion)
+    val_data = Enum.slice(data, train_portion + test_portion, val_portion)
+
+    train_dataset = InstructionDataset.new(train_data, tokenizer, prompt_style: :phi3)
+    val_dataset = InstructionDataset.new(val_data, tokenizer, prompt_style: :phi3)
+
+    :rand.seed(:exsss, {123, 123, 123})
+
+    train_loader =
+      DataLoader.new(train_dataset.encoded_texts,
+        batch_size: batch_size,
+        collate_fn: &binary_instruction_collate/1,
+        shuffle: true,
+        drop_last: true,
+        num_workers: num_workers
+      )
+
+    val_loader =
+      DataLoader.new(val_dataset.encoded_texts,
+        batch_size: batch_size,
+        collate_fn: &binary_instruction_collate/1,
+        shuffle: false,
+        drop_last: false,
+        num_workers: num_workers
+      )
+
+    train_loss = LossUtils.calc_loss_loader(train_loader, model, device, 5)
+    val_loss = LossUtils.calc_loss_loader(val_loader, model, device, 5)
+
+    input_text =
+      val_data
+      |> List.first()
+      |> FineTuneDataLoader.format_text(:phi3)
+
+    token_ids =
+      TextGeneration.generate(
+        model,
+        input_text
+        |> TextUtils.text_to_token_ids(tokenizer)
+        |> Nx.backend_transfer(device),
+        35,
+        model.cfg.context_length,
+        0.0,
+        nil,
+        50_256
+      )
+      |> Nx.backend_transfer(Nx.BinaryBackend)
+
+    generated_text = TextUtils.token_ids_to_text(token_ids, tokenizer)
+
+    num_epochs = 2
+    optimizer = Training.adamw(0.00005, weight_decay: 0.1)
+
+    {trained_model, trained_optimizer, train_losses, val_losses, tokens_seen} =
+      Training.train_model_simple(
+        model,
+        train_loader,
+        val_loader,
+        optimizer,
+        device,
+        num_epochs,
+        5,
+        5,
+        input_text,
+        tokenizer,
+        generate_samples: true,
+        return_optimizer: true
+      )
+
+    checkpoint_path = "ch7_instruction_finetuned_gpt2_355m_phi3_model_and_optimizer.nx"
+    ModelCheckpoint.save_training_state!(trained_model, trained_optimizer, checkpoint_path)
+
+    metrics_path = "ch7_instruction_finetuning_phi3_metrics.json"
+
+    write_instruction_training_metrics!(
+      metrics_path,
+      num_epochs,
+      train_losses,
+      val_losses,
+      tokens_seen
+    )
+
+    assert train_dataset.prompt_style == :phi3
+    assert val_dataset.prompt_style == :phi3
+    assert String.starts_with?(input_text, "<|user|>\n")
+    assert String.ends_with?(input_text, "\n<|end|>\n<|assistant|>\n")
+    assert String.starts_with?(generated_text, input_text)
+    assert is_float(train_loss)
+    assert is_float(val_loss)
+    assert trained_model.__struct__ == model.__struct__
+    assert %Training.AdamW{} = trained_optimizer
+    assert File.exists?(checkpoint_path)
+    assert File.stat!(checkpoint_path).size > 0
+    assert File.exists?(metrics_path)
+    assert File.stat!(metrics_path).size > 0
+    assert length(train_losses) == 47
+    assert length(val_losses) == 47
+    assert length(tokens_seen) == 47
+    assert Enum.all?(train_losses ++ val_losses, &is_float/1)
+    assert Enum.all?(tokens_seen, &is_integer/1)
+    assert tokens_seen == Enum.sort(tokens_seen)
+    assert List.last(tokens_seen) > List.first(tokens_seen)
+  end
+
+  @tag :download
+  @tag :train
+  @tag :ollama
+  @tag timeout: 1_800_000
+  test "exercise 7.1 scores Phi-3 prompt style instruction model with Ollama" do
+    assert OllamaUtils.ollama_running?()
+
+    checkpoint_path = "ch7_instruction_finetuned_gpt2_355m_phi3_model_and_optimizer.nx"
+
+    assert File.exists?(checkpoint_path)
+
+    device = use_accelerated_backend()
+    tokenizer = "code-davinci-002"
+
+    %{model_state_dict: model} = ModelCheckpoint.load_training_state!(checkpoint_path)
+    model = Nx.backend_transfer(model, device)
+
+    file_path =
+      System.tmp_dir!()
+      |> Path.join("llm_scratch_instruction_data")
+      |> Path.join("instruction-data.json")
+
+    data =
+      FineTuneDataLoader.download_and_load_instructions_file(
+        file_path,
+        @instruction_data_url
+      )
+
+    train_portion = trunc(length(data) * 0.85)
+    test_portion = trunc(length(data) * 0.1)
+    test_data = Enum.slice(data, train_portion, test_portion)
+
+    output_path = "instruction-data-with-response-phi3.json"
+
+    enriched_data =
+      test_data
+      |> InstructionsEvaluation.write_responses!(model, tokenizer, device,
+        output_path: output_path,
+        prompt_style: :phi3
+      )
+
+    scores = InstructionsEvaluation.generate_model_scores(enriched_data, "model_response")
+    average_score = Enum.sum(scores) / length(scores)
+    metrics_path = "ch7_instruction_finetuning_phi3_ollama_scores.json"
+
+    write_ollama_score_metrics!(metrics_path, scores, average_score)
+
+    assert File.exists?(output_path)
+    assert File.exists?(metrics_path)
+    assert length(enriched_data) == 110
+    assert length(scores) == 110
+    assert length(scores) == length(enriched_data)
+    assert_in_delta average_score, 46.67, 0.4
+  end
+
   defp binary_instruction_collate(batch) do
     previous_backend = Nx.default_backend()
 
@@ -601,6 +811,17 @@ defmodule LlmFromScratch7Test do
         train_values: train_losses,
         val_values: val_losses
       }
+    }
+
+    {:ok, encoded_metrics} = Jason.encode(metrics, pretty: true)
+    File.write!(path, encoded_metrics)
+  end
+
+  defp write_ollama_score_metrics!(path, scores, average_score) do
+    metrics = %{
+      score_count: length(scores),
+      average_score: average_score,
+      scores: scores
     }
 
     {:ok, encoded_metrics} = Jason.encode(metrics, pretty: true)

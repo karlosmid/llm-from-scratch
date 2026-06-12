@@ -3,9 +3,10 @@ defmodule LlmScratch.InstructionDataset do
   Pre-tokenized instruction fine-tuning dataset.
 
   This mirrors the PyTorch `InstructionDataset` example from chapter 7. A
-  dataset is built from decoded instruction maps, formats each map as an
-  Alpaca-style prompt plus response, and pre-tokenizes the full text during
-  construction.
+  dataset is built from decoded instruction maps, formats each map as a prompt
+  plus response, and pre-tokenizes the full text during construction. Alpaca
+  prompt formatting is used by default; Phi-3-style chat formatting can be
+  selected with `prompt_style: :phi3`.
 
   ## Examples
 
@@ -26,26 +27,38 @@ defmodule LlmScratch.InstructionDataset do
        25, 198, 40313, 13]
   """
 
-  @enforce_keys [:data, :encoded_texts]
-  defstruct [:data, :encoded_texts]
+  @enforce_keys [:data, :encoded_texts, :prompt_style]
+  defstruct [:data, :encoded_texts, :prompt_style]
 
   @end_of_text "<|endoftext|>"
   @pad_token_id 50_256
 
   @type instruction_record :: LlmScratch.FineTuneDataLoader.instruction_record()
   @type tokenizer :: String.t()
+  @type prompt_style :: :alpaca | :phi3
   @type t :: %__MODULE__{
           data: [instruction_record()],
-          encoded_texts: [[integer()]]
+          encoded_texts: [[integer()]],
+          prompt_style: prompt_style()
         }
 
   @doc """
   Creates an instruction dataset from decoded instruction records.
 
-  Each record is formatted with `LlmScratch.FineTuneDataLoader.format_input/1`,
-  then the target response is appended as:
+  By default, each record is formatted with
+  `LlmScratch.FineTuneDataLoader.format_input/1`, then the target response is
+  appended as:
 
       \\n\\n### Response:\\n...
+
+  With `prompt_style: :phi3`, each record is formatted as:
+
+      <|user|>
+      ...
+      <|end|>
+      <|assistant|>
+      ...
+      <|end|>
 
   The resulting full text is encoded immediately and stored in
   `dataset.encoded_texts`.
@@ -61,6 +74,8 @@ defmodule LlmScratch.InstructionDataset do
 
     * `:allowed_special` - special tokens allowed when `tokenizer` is a
       Tiktoken model name. Defaults to `["<|endoftext|>"]`.
+    * `:prompt_style` - prompt format for full training examples. Supported
+      values are `:alpaca` and `:phi3`. Defaults to `:alpaca`.
 
   ## Output
 
@@ -97,6 +112,8 @@ defmodule LlmScratch.InstructionDataset do
   """
   @spec new([instruction_record()], tokenizer(), keyword()) :: t()
   def new(data, tokenizer, opts \\ []) when is_list(data) do
+    prompt_style = Keyword.get(opts, :prompt_style, :alpaca)
+
     # Pre-tokenize each complete training example once so repeated dataset
     # access does not rebuild the prompt or call the tokenizer again.
     encoded_texts =
@@ -104,7 +121,7 @@ defmodule LlmScratch.InstructionDataset do
         entry
         # The model trains on the instruction/input prompt followed by the
         # expected response target, matching the chapter 7 PyTorch dataset.
-        |> full_text()
+        |> full_text(prompt_style)
         |> encode_text!(tokenizer, opts)
       end)
 
@@ -112,7 +129,8 @@ defmodule LlmScratch.InstructionDataset do
     # from `encoded_texts`, which mirrors the PyTorch dataset fields.
     %__MODULE__{
       data: data,
-      encoded_texts: encoded_texts
+      encoded_texts: encoded_texts,
+      prompt_style: prompt_style
     }
   end
 
@@ -269,11 +287,22 @@ defmodule LlmScratch.InstructionDataset do
     }
   end
 
-  defp full_text(%{"output" => output} = entry) when is_binary(output) do
+  defp full_text(%{"output" => output} = entry, :alpaca) when is_binary(output) do
     instruction_plus_input = LlmScratch.FineTuneDataLoader.format_input(entry)
     response_text = "\n\n### Response:\n#{output}"
 
     instruction_plus_input <> response_text
+  end
+
+  defp full_text(%{"output" => output} = entry, :phi3) when is_binary(output) do
+    entry
+    |> LlmScratch.FineTuneDataLoader.format_text(:phi3)
+    |> Kernel.<>(output)
+    |> Kernel.<>("\n<|end|>")
+  end
+
+  defp full_text(_entry, prompt_style) do
+    raise ArgumentError, "unsupported prompt style: #{inspect(prompt_style)}"
   end
 
   defp encode_text!(text, tokenizer, opts) when is_binary(tokenizer) do

@@ -28,6 +28,8 @@ defmodule LlmScratch.InstructionsEvaluation do
     * `:context_size` - context length passed to `TextGeneration.generate/7`.
       Defaults to `model.cfg.context_length`.
     * `:eos_id` - end-of-text token id. Defaults to `50256`.
+    * `:prompt_style` - prompt format used for generation. Supported values
+      are `:alpaca` and `:phi3`. Defaults to `:alpaca`.
 
   Returns the enriched records after writing the file.
 
@@ -118,6 +120,7 @@ defmodule LlmScratch.InstructionsEvaluation do
     max_new_tokens = Keyword.get(opts, :max_new_tokens, @default_max_new_tokens)
     context_size = Keyword.get_lazy(opts, :context_size, fn -> model.cfg.context_length end)
     eos_id = Keyword.get(opts, :eos_id, @default_eos_id)
+    prompt_style = Keyword.get(opts, :prompt_style, :alpaca)
 
     Enum.with_index(test_data, fn entry, index ->
       if Keyword.get(opts, :progress, false) do
@@ -127,7 +130,16 @@ defmodule LlmScratch.InstructionsEvaluation do
       Map.put(
         entry,
         "model_response",
-        generate_response(model, entry, tokenizer, device, max_new_tokens, context_size, eos_id)
+        generate_response(
+          model,
+          entry,
+          tokenizer,
+          device,
+          max_new_tokens,
+          context_size,
+          eos_id,
+          prompt_style
+        )
       )
     end)
   end
@@ -163,8 +175,17 @@ defmodule LlmScratch.InstructionsEvaluation do
     |> Enum.reverse()
   end
 
-  defp generate_response(model, entry, tokenizer, device, max_new_tokens, context_size, eos_id) do
-    input_text = FineTuneDataLoader.format_input(entry)
+  defp generate_response(
+         model,
+         entry,
+         tokenizer,
+         device,
+         max_new_tokens,
+         context_size,
+         eos_id,
+         prompt_style
+       ) do
+    input_text = FineTuneDataLoader.format_text(entry, prompt_style)
 
     token_ids =
       TextGeneration.generate(
@@ -183,8 +204,18 @@ defmodule LlmScratch.InstructionsEvaluation do
     token_ids
     |> TextUtils.token_ids_to_text(tokenizer)
     |> String.slice(String.length(input_text)..-1//1)
-    |> String.replace("### Response:", "")
+    |> clean_generated_response(prompt_style)
     |> String.trim()
+  end
+
+  defp clean_generated_response(response, :alpaca) do
+    String.replace(response, "### Response:", "")
+  end
+
+  defp clean_generated_response(response, :phi3) do
+    response
+    |> String.split("<|end|>", parts: 2)
+    |> List.first()
   end
 
   defp maybe_transfer(tensor, nil), do: tensor
