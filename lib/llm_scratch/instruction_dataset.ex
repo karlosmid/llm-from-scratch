@@ -27,19 +27,22 @@ defmodule LlmScratch.InstructionDataset do
        25, 198, 40313, 13]
   """
 
-  @enforce_keys [:data, :encoded_texts, :prompt_style]
-  defstruct [:data, :encoded_texts, :prompt_style]
+  @enforce_keys [:data, :encoded_texts, :prompt_style, :mask_out_instructions_in_target]
+  defstruct [:data, :encoded_texts, :prompt_style, :mask_out_instructions_in_target]
 
   @end_of_text "<|endoftext|>"
   @pad_token_id 50_256
 
   @type instruction_record :: LlmScratch.FineTuneDataLoader.instruction_record()
+  @type encoded_example ::
+          [integer()] | %{token_ids: [integer()], prompt_length: non_neg_integer()}
   @type tokenizer :: String.t()
   @type prompt_style :: :alpaca | :phi3
   @type t :: %__MODULE__{
           data: [instruction_record()],
-          encoded_texts: [[integer()]],
-          prompt_style: prompt_style()
+          encoded_texts: [encoded_example()],
+          prompt_style: prompt_style(),
+          mask_out_instructions_in_target: boolean()
         }
 
   @doc """
@@ -76,12 +79,18 @@ defmodule LlmScratch.InstructionDataset do
       Tiktoken model name. Defaults to `["<|endoftext|>"]`.
     * `:prompt_style` - prompt format for full training examples. Supported
       values are `:alpaca` and `:phi3`. Defaults to `:alpaca`.
+    * `:mask_out_instructions_in_target` - when `true`, instruction/input
+      prompt targets are masked with `-100` so the loss is computed only after
+      the prompt. Padding targets are still masked independently by
+      `custom_collate/4`. Defaults to `false`.
 
   ## Output
 
   Returns a `%LlmScratch.InstructionDataset{}`. The `:data` field contains the
-  original records, and `:encoded_texts` contains one pre-tokenized token-id
-  list per record.
+  original records, and `:encoded_texts` contains one pre-tokenized example per
+  record. With `mask_out_instructions_in_target: false`, each example is a
+  token-id list. With `mask_out_instructions_in_target: true`, each example
+  also carries prompt-length metadata used by `custom_collate/4`.
 
   ## Examples
 
@@ -113,16 +122,13 @@ defmodule LlmScratch.InstructionDataset do
   @spec new([instruction_record()], tokenizer(), keyword()) :: t()
   def new(data, tokenizer, opts \\ []) when is_list(data) do
     prompt_style = Keyword.get(opts, :prompt_style, :alpaca)
+    mask_out_instructions_in_target = Keyword.get(opts, :mask_out_instructions_in_target, false)
 
     # Pre-tokenize each complete training example once so repeated dataset
     # access does not rebuild the prompt or call the tokenizer again.
     encoded_texts =
       Enum.map(data, fn entry ->
-        entry
-        # The model trains on the instruction/input prompt followed by the
-        # expected response target, matching the chapter 7 PyTorch dataset.
-        |> full_text(prompt_style)
-        |> encode_text!(tokenizer, opts)
+        encode_example(entry, tokenizer, opts, prompt_style, mask_out_instructions_in_target)
       end)
 
     # Keep the decoded records for inspection while serving encoded examples
@@ -130,7 +136,8 @@ defmodule LlmScratch.InstructionDataset do
     %__MODULE__{
       data: data,
       encoded_texts: encoded_texts,
-      prompt_style: prompt_style
+      prompt_style: prompt_style,
+      mask_out_instructions_in_target: mask_out_instructions_in_target
     }
   end
 
@@ -226,7 +233,7 @@ defmodule LlmScratch.InstructionDataset do
       >
   """
   @spec custom_collate(
-          tuple() | [[integer()]],
+          tuple() | [encoded_example()],
           integer(),
           integer(),
           nil | pos_integer()
@@ -248,15 +255,17 @@ defmodule LlmScratch.InstructionDataset do
 
   def custom_collate(batch, pad_token_id, ignore_index, allowed_max_length)
       when is_list(batch) do
+    examples = Enum.map(batch, &normalize_example/1)
+
     # Find the longest sequence length after the one extra pad token that the
     # Python collate function appends to every item.
     batch_max_length =
-      batch
-      |> Enum.map(&(Kernel.length(&1) + 1))
+      examples
+      |> Enum.map(&(Kernel.length(&1.token_ids) + 1))
       |> Enum.max(fn -> 0 end)
 
     {inputs, targets} =
-      Enum.map(batch, fn item ->
+      Enum.map(examples, fn %{token_ids: item, prompt_length: prompt_length} ->
         # Elixir data is immutable, so this builds the equivalent of
         # `new_item = item.copy(); new_item += [pad_token_id]`.
         new_item = item ++ [pad_token_id]
@@ -272,6 +281,7 @@ defmodule LlmScratch.InstructionDataset do
           padded
           |> Enum.slice(1, batch_max_length - 1)
           |> mask_extra_padding_targets(pad_token_id, ignore_index)
+          |> mask_prompt_targets(prompt_length, ignore_index)
 
         # Optionally cap both rows to the model context length.
         {
@@ -287,8 +297,51 @@ defmodule LlmScratch.InstructionDataset do
     }
   end
 
+  defp encode_example(entry, tokenizer, opts, prompt_style, false) do
+    entry
+    # The model trains on the instruction/input prompt followed by the
+    # expected response target, matching the chapter 7 PyTorch dataset.
+    |> full_text(prompt_style)
+    |> encode_text!(tokenizer, opts)
+  end
+
+  defp encode_example(entry, tokenizer, opts, prompt_style, true) do
+    token_ids =
+      entry
+      |> full_text(prompt_style)
+      |> encode_text!(tokenizer, opts)
+
+    prompt_length =
+      entry
+      |> prompt_text(prompt_style)
+      |> encode_text!(tokenizer, opts)
+      |> Kernel.length()
+
+    %{token_ids: token_ids, prompt_length: prompt_length}
+  end
+
+  defp encode_example(
+         _entry,
+         _tokenizer,
+         _opts,
+         _prompt_style,
+         mask_out_instructions_in_target
+       ) do
+    raise ArgumentError,
+          "expected :mask_out_instructions_in_target to be a boolean, got: #{inspect(mask_out_instructions_in_target)}"
+  end
+
+  defp normalize_example(token_ids) when is_list(token_ids) do
+    %{token_ids: token_ids, prompt_length: nil}
+  end
+
+  defp normalize_example(%{token_ids: token_ids, prompt_length: prompt_length})
+       when is_list(token_ids) and is_integer(prompt_length) and prompt_length >= 0 do
+    %{token_ids: token_ids, prompt_length: prompt_length}
+  end
+
   defp full_text(%{"output" => output} = entry, :alpaca) when is_binary(output) do
-    instruction_plus_input = LlmScratch.FineTuneDataLoader.format_input(entry)
+    instruction_plus_input = prompt_text(entry, :alpaca)
     response_text = "\n\n### Response:\n#{output}"
 
     instruction_plus_input <> response_text
@@ -303,6 +356,10 @@ defmodule LlmScratch.InstructionDataset do
 
   defp full_text(_entry, prompt_style) do
     raise ArgumentError, "unsupported prompt style: #{inspect(prompt_style)}"
+  end
+
+  defp prompt_text(entry, prompt_style) do
+    LlmScratch.FineTuneDataLoader.format_text(entry, prompt_style)
   end
 
   defp encode_text!(text, tokenizer, opts) when is_binary(tokenizer) do
@@ -329,6 +386,19 @@ defmodule LlmScratch.InstructionDataset do
       end)
 
     masked_targets
+  end
+
+  defp mask_prompt_targets(targets, nil, _ignore_index), do: targets
+
+  defp mask_prompt_targets(targets, prompt_length, ignore_index) do
+    mask_count = max(prompt_length - 1, 0)
+
+    targets
+    |> Enum.with_index()
+    |> Enum.map(fn
+      {_target, index} when index < mask_count -> ignore_index
+      {target, _index} -> target
+    end)
   end
 
   defp maybe_truncate(token_ids, nil), do: token_ids
