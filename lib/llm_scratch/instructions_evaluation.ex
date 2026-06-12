@@ -3,7 +3,7 @@ defmodule LlmScratch.InstructionsEvaluation do
   Helpers for evaluating an instruction fine-tuned model on instruction records.
   """
 
-  alias LlmScratch.{FineTuneDataLoader, TextGeneration, TextUtils}
+  alias LlmScratch.{FineTuneDataLoader, OllamaUtils, TextGeneration, TextUtils}
 
   @default_output_path "instruction-data-with-response.json"
   @default_max_new_tokens 256
@@ -130,6 +130,37 @@ defmodule LlmScratch.InstructionsEvaluation do
         generate_response(model, entry, tokenizer, device, max_new_tokens, context_size, eos_id)
       )
     end)
+  end
+
+  @doc """
+  Scores generated model responses with a local Ollama model.
+
+  `json_key` identifies the generated response field in each instruction
+  record, for example `"model_response"`. Entries whose score cannot be
+  parsed as an integer are skipped, matching the chapter 7 evaluation loop.
+  """
+  @spec generate_model_scores([instruction_record()], String.t(), String.t()) :: [integer()]
+  def generate_model_scores(json_data, json_key, model \\ "llama3")
+      when is_list(json_data) and is_binary(json_key) and is_binary(model) do
+    Enum.reduce(json_data, [], fn entry, scores ->
+      prompt =
+        "Given the input `#{FineTuneDataLoader.format_input(entry)}` " <>
+          "and correct output `#{entry["output"]}`, " <>
+          "score the model response `#{entry[json_key]}`" <>
+          " on a scale from 0 to 100, where 100 is the best score. " <>
+          "Respond with the integer number only."
+
+      score = OllamaUtils.query_model(prompt, model)
+
+      try do
+        [String.to_integer(String.trim(score)) | scores]
+      rescue
+        ArgumentError ->
+          IO.puts("Could not convert score: #{score}")
+          scores
+      end
+    end)
+    |> Enum.reverse()
   end
 
   defp generate_response(model, entry, tokenizer, device, max_new_tokens, context_size, eos_id) do

@@ -405,7 +405,7 @@ defmodule LlmFromScratch7Test do
 
   @tag :train
   @tag timeout: 900_000
-  test "7.7 evaluates fine-tuned instruction model on first test samples" do
+  test "7.7 evaluates fine-tuned instruction model on test samples" do
     checkpoint_path = "ch7_instruction_finetuned_gpt2_355m_model_and_optimizer.nx"
 
     assert File.exists?(checkpoint_path)
@@ -462,13 +462,10 @@ defmodule LlmFromScratch7Test do
       }
     ]
 
-    output_path =
-      System.tmp_dir!()
-      |> Path.join("instruction-data-with-response.json")
+    output_path = "instruction-data-with-response.json"
 
     enriched_data =
       test_data
-      |> Enum.take(3)
       |> InstructionsEvaluation.write_responses!(model, tokenizer, device,
         output_path: output_path
       )
@@ -476,6 +473,7 @@ defmodule LlmFromScratch7Test do
     assert File.exists?(output_path)
 
     enriched_data
+    |> Enum.take(3)
     |> Enum.zip(expected_samples)
     |> Enum.each(fn {entry, expected} ->
       input_text = FineTuneDataLoader.format_input(entry)
@@ -509,13 +507,13 @@ defmodule LlmFromScratch7Test do
     expected_samples = [
       %{
         output: "The car is as fast as lightning.",
-        model_response: "The car is as fast as a bullet.",
+        model_response: "The car is as fast as a cheetah.",
         score: 85
       },
       %{
         output: "The type of cloud typically associated with thunderstorms is cumulonimbus.",
-        model_response: "The type of cloud associated with thunderstorms is a cumulus cloud.",
-        score: 40
+        model_response: "A thunderstorm is a type of cloud that typically forms when thunderstorms produce a dense, convective layer of air that is at least 10 miles thick.",
+        score: 20
       },
       %{
         output: "Jane Austen.",
@@ -554,6 +552,28 @@ defmodule LlmFromScratch7Test do
       assert report =~ "\nScore:\n>> #{score_response}\n"
       assert String.ends_with?(report, "\n-------------------------\n")
     end)
+  end
+
+  @tag :ollama
+  @tag timeout: 900_000
+  test "7.8 scores all saved instruction responses with Ollama" do
+    assert OllamaUtils.ollama_running?()
+
+    response_data_path = "instruction-data-with-response.json"
+
+    assert File.exists?(response_data_path)
+
+    test_data =
+      response_data_path
+      |> File.read!()
+      |> Jason.decode!()
+
+    scores = InstructionsEvaluation.generate_model_scores(test_data, "model_response")
+    average_score = Enum.sum(scores) / length(scores)
+
+    assert length(scores) == 110
+    assert length(scores) == length(test_data)
+    assert_in_delta average_score, 50.32, 0.4
   end
 
   defp binary_instruction_collate(batch) do
