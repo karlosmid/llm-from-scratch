@@ -11,6 +11,7 @@ defmodule LlmFromScratch7Test do
     InstructionsEvaluation,
     LossUtils,
     ModelCheckpoint,
+    OllamaUtils,
     TextGeneration,
     TextUtils,
     Training
@@ -485,6 +486,76 @@ defmodule LlmFromScratch7Test do
     end)
   end
 
+  @tag :ollama
+  test "7.8 queries local Ollama llama3 model for response scores" do
+    assert OllamaUtils.ollama_running?()
+
+    result = OllamaUtils.query_model("What do Llamas eat?", "llama3")
+
+    assert String.contains?(result, "Llamas are herbivores")
+    assert String.contains?(result, "Minerals")
+    assert String.contains?(result, "Grasses")
+
+    response_data_path = "instruction-data-with-response.json"
+
+    assert File.exists?(response_data_path)
+
+    test_data =
+      response_data_path
+      |> File.read!()
+      |> Jason.decode!()
+      |> Enum.take(3)
+
+    expected_samples = [
+      %{
+        output: "The car is as fast as lightning.",
+        model_response: "The car is as fast as a bullet.",
+        score: 85
+      },
+      %{
+        output: "The type of cloud typically associated with thunderstorms is cumulonimbus.",
+        model_response: "The type of cloud associated with thunderstorms is a cumulus cloud.",
+        score: 40
+      },
+      %{
+        output: "Jane Austen.",
+        model_response: "The author of 'Pride and Prejudice' is Jane Austen.",
+        score: 95
+      }
+    ]
+
+    test_data
+    |> Enum.take(3)
+    |> Enum.zip(expected_samples)
+    |> Enum.each(fn {entry, expected} ->
+      prompt =
+        "Given the input `#{FineTuneDataLoader.format_input(entry)}` " <>
+          "and correct output `#{entry["output"]}`, " <>
+          "score the model response `#{entry["model_response"]}`" <>
+          " on a scale from 0 to 100, where 100 is the best score. "
+
+      score_response = OllamaUtils.query_model(prompt, "llama3")
+
+      report =
+        "\nDataset response:\n" <>
+          ">> #{entry["output"]}\n" <>
+          "\nModel response:\n" <>
+          ">> #{entry["model_response"]}\n" <>
+          "\nScore:\n" <>
+          ">> #{score_response}\n" <>
+          "\n-------------------------\n"
+
+      assert entry["output"] == expected.output
+      assert entry["model_response"] == expected.model_response
+      assert response_score(score_response) == expected.score
+
+      assert report =~ "\nDataset response:\n>> #{expected.output}\n"
+      assert report =~ "\nModel response:\n>> #{expected.model_response}\n"
+      assert report =~ "\nScore:\n>> #{score_response}\n"
+      assert String.ends_with?(report, "\n-------------------------\n")
+    end)
+  end
+
   defp binary_instruction_collate(batch) do
     previous_backend = Nx.default_backend()
 
@@ -514,5 +585,14 @@ defmodule LlmFromScratch7Test do
 
     {:ok, encoded_metrics} = Jason.encode(metrics, pretty: true)
     File.write!(path, encoded_metrics)
+  end
+
+  defp response_score(response) do
+    response
+    |> then(&Regex.run(~r/\b(100|[1-9]?\d)\s*(?:out of|\/)\s*100\b/, &1, capture: :all_but_first))
+    |> case do
+      [score] -> String.to_integer(score)
+      nil -> flunk("Expected Ollama response to include a score out of 100, got: #{response}")
+    end
   end
 end
