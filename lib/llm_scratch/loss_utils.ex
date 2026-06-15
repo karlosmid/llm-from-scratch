@@ -204,15 +204,24 @@ defmodule LlmScratch.LossUtils do
       true ->
         num_batches = normalize_num_batches(num_batches, loader_length)
 
-        data_loader.stream
-        |> Stream.take(num_batches)
-        |> Enum.reduce(0.0, fn batch, total_loss ->
-          {input_batch, target_batch} = stack_batch(batch)
-          loss = calc_loss_batch(input_batch, target_batch, model, device, opts)
+        {total_loss, valid_batch_count} =
+          data_loader.stream
+          |> Stream.take(num_batches)
+          |> Enum.reduce({0.0, 0}, fn batch, {total_loss, valid_batch_count} ->
+            {input_batch, target_batch} = stack_batch(batch)
+            loss = calc_loss_batch(input_batch, target_batch, model, device, opts)
 
-          total_loss + Nx.to_number(loss)
-        end)
-        |> Kernel./(num_batches)
+            case finite_number(Nx.to_number(loss)) do
+              {:ok, loss} -> {total_loss + loss, valid_batch_count + 1}
+              :error -> {total_loss, valid_batch_count}
+            end
+          end)
+
+        if valid_batch_count == 0 do
+          :nan
+        else
+          total_loss / valid_batch_count
+        end
     end
   end
 
@@ -222,6 +231,15 @@ defmodule LlmScratch.LossUtils do
 
   defp normalize_num_batches(nil, loader_length), do: loader_length
   defp normalize_num_batches(num_batches, loader_length), do: min(num_batches, loader_length)
+
+  defp finite_number(number) when is_number(number) do
+    cond do
+      number != number -> :error
+      true -> {:ok, number}
+    end
+  end
+
+  defp finite_number(_number), do: :error
 
   defp select_loss_logits(logits, opts) do
     case Keyword.get(opts, :target) do

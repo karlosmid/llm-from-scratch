@@ -382,7 +382,9 @@ defmodule LlmScratch.Training do
       # Dropout RNG key; GPTModel.train/3 returns the next key for the next batch.
       key: key,
       # Optimizer state; AdamW carries step count and moment tensors across batches.
-      optimizer: optimizer
+      optimizer: optimizer,
+      # Total scheduled training batches, used only for progress reporting.
+      total_steps: training_step_count(train_loader, num_epochs)
     }
 
     # Main training loop by number of epocs
@@ -497,6 +499,7 @@ defmodule LlmScratch.Training do
       val_accs: [],
       examples_seen: 0,
       global_step: -1,
+      total_steps: training_step_count(train_loader, num_epochs),
       target: Keyword.get(opts, :target, :last_token)
     }
 
@@ -796,7 +799,7 @@ defmodule LlmScratch.Training do
           )
 
         IO.puts(
-          "Ep #{epoch} (Step #{pad_step(global_step)}): " <>
+          "Ep #{epoch} (Step #{pad_step(global_step)}, #{progress_done(global_step, state.total_steps)} done): " <>
             "Train loss #{format_loss(train_loss)}, Val loss #{format_loss(val_loss)}"
         )
 
@@ -829,45 +832,50 @@ defmodule LlmScratch.Training do
     |> Enum.reduce(state, fn batch, state ->
       # separate batch inputs and targets
       {input_batch, target_batch} = stack_batch(batch, device)
-      # calculate loss and gradinets
-      {_loss, gradients, key} = loss_and_grad(state.model, input_batch, target_batch, state.key)
-      # avoid overfitting and penalized larger weights
-      {model, optimizer} = optimizer_step(state.optimizer, state.model, gradients)
-      # tokens that we have processed so far
-      tokens_seen = state.tokens_seen + Nx.size(input_batch)
-      global_step = state.global_step + 1
 
-      state = %{
-        state
-        | model: model,
-          tokens_seen: tokens_seen,
-          global_step: global_step,
-          key: key,
-          optimizer: optimizer
-      }
+      if valid_target_batch?(target_batch) do
+        # calculate loss and gradinets
+        {_loss, gradients, key} = loss_and_grad(state.model, input_batch, target_batch, state.key)
+        # avoid overfitting and penalized larger weights
+        {model, optimizer} = optimizer_step(state.optimizer, state.model, gradients)
+        # tokens that we have processed so far
+        tokens_seen = state.tokens_seen + Nx.size(input_batch)
+        global_step = state.global_step + 1
 
-      # evaluate model on evaluation frequency
-      if rem(global_step, eval_freq) == 0 do
-        {train_loss, val_loss} =
-          evaluate_model(model, train_loader, val_loader, device, eval_iter)
-
-        IO.puts(
-          "Ep #{epoch} (Step #{pad_step(global_step)}): " <>
-            "Train loss #{format_loss(train_loss)}, Val loss #{format_loss(val_loss)}"
-        )
-
-        if Keyword.get(opts, :generate_samples, true) do
-          # generate tokens based on current model to see what model actually predicts
-          # we do not want gibberish text!
-          generate_and_print_sample(model, tokenizer, device, start_context)
-        end
-
-        %{
+        state = %{
           state
-          | train_losses: [train_loss | state.train_losses],
-            val_losses: [val_loss | state.val_losses],
-            track_tokens_seen: [tokens_seen | state.track_tokens_seen]
+          | model: model,
+            tokens_seen: tokens_seen,
+            global_step: global_step,
+            key: key,
+            optimizer: optimizer
         }
+
+        # evaluate model on evaluation frequency
+        if rem(global_step, eval_freq) == 0 do
+          {train_loss, val_loss} =
+            evaluate_model(model, train_loader, val_loader, device, eval_iter)
+
+          IO.puts(
+            "Ep #{epoch} (Step #{pad_step(global_step)}, #{progress_done(global_step, state.total_steps)} done): " <>
+              "Train loss #{format_loss(train_loss)}, Val loss #{format_loss(val_loss)}"
+          )
+
+          if Keyword.get(opts, :generate_samples, true) do
+            # generate tokens based on current model to see what model actually predicts
+            # we do not want gibberish text!
+            generate_and_print_sample(model, tokenizer, device, start_context)
+          end
+
+          %{
+            state
+            | train_losses: [train_loss | state.train_losses],
+              val_losses: [val_loss | state.val_losses],
+              track_tokens_seen: [tokens_seen | state.track_tokens_seen]
+          }
+        else
+          state
+        end
       else
         state
       end
@@ -897,6 +905,14 @@ defmodule LlmScratch.Training do
       inputs |> Nx.stack() |> maybe_transfer_tensor(device),
       targets |> Nx.stack() |> maybe_transfer_tensor(device)
     }
+  end
+
+  defp valid_target_batch?(target_batch, ignore_index \\ -100) do
+    target_batch
+    |> Nx.not_equal(ignore_index)
+    |> Nx.any()
+    |> Nx.to_number()
+    |> Kernel.==(1)
   end
 
   # here we update model weights, central part of training algorithm
@@ -1138,6 +1154,21 @@ defmodule LlmScratch.Training do
 
   defp maybe_transfer_tensor(tensor, device) when device in [nil, :default], do: tensor
   defp maybe_transfer_tensor(tensor, device), do: Nx.backend_transfer(tensor, device)
+
+  defp training_step_count(train_loader, num_epochs) do
+    Map.get(train_loader, :length, 0) * num_epochs
+  end
+
+  defp progress_done(_global_step, total_steps) when total_steps <= 0, do: "100.00%"
+
+  defp progress_done(global_step, total_steps) do
+    progress =
+      (global_step + 1)
+      |> Kernel./(total_steps)
+      |> min(1.0)
+
+    "#{format_percent(progress)}%"
+  end
 
   defp format_loss(:nan), do: "nan"
   defp format_loss(loss), do: :erlang.float_to_binary(loss * 1.0, decimals: 3)

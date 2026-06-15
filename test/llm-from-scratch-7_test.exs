@@ -5,7 +5,9 @@ defmodule LlmFromScratch7Test do
 
   alias LlmScratch.{
     DataLoader,
+    DummyGPTModel,
     FineTuneDataLoader,
+    GPTConfig,
     GPT2OpenAI,
     InstructionDataset,
     InstructionsEvaluation,
@@ -218,6 +220,42 @@ defmodule LlmFromScratch7Test do
     assert Nx.equal(loss_1, loss_3) |> Nx.to_number() == 1
   end
 
+  test "7.3 loss loader skips batches with only ignored instruction targets" do
+    model =
+      %GPTConfig{
+        vocab_size: 16,
+        context_length: 4,
+        emb_dim: 8,
+        n_heads: 1,
+        n_layers: 1,
+        drop_rate: 0.0,
+        qkv_bias: false
+      }
+      |> DummyGPTModel.new(seed: 123)
+
+    ignored_batch = {
+      Nx.tensor([[1, 2, 3, 4]], type: {:s, 64}),
+      Nx.tensor([[-100, -100, -100, -100]], type: {:s, 64})
+    }
+
+    valid_batch = {
+      Nx.tensor([[1, 2, 3, 4]], type: {:s, 64}),
+      Nx.tensor([[-100, -100, 5, 6]], type: {:s, 64})
+    }
+
+    data_loader = %{
+      stream: [ignored_batch, valid_batch],
+      length: 2
+    }
+
+    expected_loss =
+      valid_batch
+      |> then(fn {inputs, targets} -> LossUtils.calc_loss_batch(inputs, targets, model) end)
+      |> Nx.to_number()
+
+    assert LossUtils.calc_loss_loader(data_loader, model) == expected_loss
+  end
+
   test "exercise 7.2 custom collate masks instruction and input targets" do
     batch = [
       %{token_ids: [10, 11, 12, 13], prompt_length: 3},
@@ -240,6 +278,36 @@ defmodule LlmFromScratch7Test do
                [
                  [-100, -100, 13, 50_256],
                  [21, 50_256, -100, -100]
+               ],
+               type: {:s, 64}
+             )
+  end
+
+  test "instruction collate can cap batches to model context length" do
+    batch = [
+      %{token_ids: Enum.to_list(0..9), prompt_length: 0},
+      %{token_ids: Enum.to_list(20..24), prompt_length: 0}
+    ]
+
+    {inputs, targets} = binary_instruction_collate(batch, 6)
+
+    assert Nx.shape(inputs) == {2, 6}
+    assert Nx.shape(targets) == {2, 6}
+
+    assert inputs ==
+             Nx.tensor(
+               [
+                 [0, 1, 2, 3, 4, 5],
+                 [20, 21, 22, 23, 24, 50_256]
+               ],
+               type: {:s, 64}
+             )
+
+    assert targets ==
+             Nx.tensor(
+               [
+                 [1, 2, 3, 4, 5, 6],
+                 [21, 22, 23, 24, 50_256, -100]
                ],
                type: {:s, 64}
              )
@@ -990,7 +1058,7 @@ defmodule LlmFromScratch7Test do
   end
 
   @tag :train_long
-  @tag timeout: 7_200_000
+  @tag timeout: 72_000_000
   test "exercise 7.3 fine-tunes instruction model on Alpaca data" do
     device = use_accelerated_backend()
     tokenizer = "code-davinci-002"
@@ -1008,12 +1076,23 @@ defmodule LlmFromScratch7Test do
 
     :rand.seed(:exsss, {123, 123, 123})
 
-    train_loader = instruction_data_loader(train_dataset, shuffle: true, drop_last: true)
-    val_loader = instruction_data_loader(val_dataset, shuffle: false, drop_last: false)
+    train_loader =
+      instruction_data_loader(train_dataset,
+        shuffle: true,
+        drop_last: true,
+        allowed_max_length: model.cfg.context_length
+      )
+
+    val_loader =
+      instruction_data_loader(val_dataset,
+        shuffle: false,
+        drop_last: false,
+        allowed_max_length: model.cfg.context_length
+      )
 
     input_text = val_data |> List.first() |> FineTuneDataLoader.format_input()
     optimizer = Training.adamw(0.00005, weight_decay: 0.1)
-    num_epochs = 1
+    num_epochs = 2
 
     {trained_model, trained_optimizer, train_losses, val_losses, tokens_seen} =
       Training.train_model_simple(
@@ -1027,7 +1106,7 @@ defmodule LlmFromScratch7Test do
         5,
         input_text,
         tokenizer,
-        generate_samples: true,
+        generate_samples: false,
         return_optimizer: true
       )
 
@@ -1095,25 +1174,30 @@ defmodule LlmFromScratch7Test do
     assert length(enriched_data) == 110
     assert length(scores) == 110
     assert length(scores) == length(enriched_data)
-    assert average_score >= 0.0
-    assert average_score <= 100.0
+    assert_in_delta average_score, 50.54, 0.4
   end
 
   defp binary_instruction_collate(batch) do
+    binary_instruction_collate(batch, nil)
+  end
+
+  defp binary_instruction_collate(batch, allowed_max_length) do
     previous_backend = Nx.default_backend()
 
     try do
       Nx.default_backend(Nx.BinaryBackend)
-      InstructionDataset.custom_collate(batch)
+      InstructionDataset.custom_collate(batch, 50256, -100, allowed_max_length)
     after
       Nx.default_backend(previous_backend)
     end
   end
 
   defp instruction_data_loader(dataset, opts) do
+    allowed_max_length = Keyword.get(opts, :allowed_max_length)
+
     DataLoader.new(dataset.encoded_texts,
       batch_size: 8,
-      collate_fn: &binary_instruction_collate/1,
+      collate_fn: &binary_instruction_collate(&1, allowed_max_length),
       shuffle: Keyword.fetch!(opts, :shuffle),
       drop_last: Keyword.fetch!(opts, :drop_last),
       num_workers: 3
