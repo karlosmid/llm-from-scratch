@@ -58,11 +58,21 @@ defimpl Inspect, for: LlmScratch.GPTModel do
     "Embedding(#{vocab_size}, #{embedding_dim})"
   end
 
+  defp linear(%LlmScratch.LinearWithLoRA{} = layer) do
+    "LinearWithLoRA(linear=#{linear(layer.linear)}, lora=#{lora(layer.lora)})"
+  end
+
   defp linear(%{kernel: kernel} = layer) do
     {in_features, out_features} = Nx.shape(kernel)
 
     "Linear(in_features=#{in_features}, out_features=#{out_features}, bias=#{Map.has_key?(layer, :bias)})"
   end
+
+  defp lora(%LlmScratch.LoRALayer{} = layer) do
+    "LoRALayer(in_features=#{layer.in_dim}, out_features=#{layer.out_dim}, rank=#{layer.rank}, alpha=#{layer.alpha})"
+  end
+
+  defp out_head(%LlmScratch.LinearWithLoRA{} = layer), do: linear(layer)
 
   defp out_head(%{kernel: kernel} = layer) do
     {in_features, out_features} = Nx.shape(kernel)

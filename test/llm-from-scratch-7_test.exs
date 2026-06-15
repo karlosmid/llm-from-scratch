@@ -1199,6 +1199,7 @@ defmodule LlmFromScratch7Test do
       LoRAUtils.replace_linear_with_lora(frozen_model, 16, 16, include_output_head: true)
 
     total_lora_params = GPTModel.trainable_parameters(lora_model)
+    inspected = inspect(lora_model)
 
     assert total_params_before == GPTModel.total_parameters(model)
     assert total_params_before == 124_441_346
@@ -1206,6 +1207,17 @@ defmodule LlmFromScratch7Test do
     assert total_params_after == 0
     assert lora_model.trainable == [:lora]
     assert total_lora_params == 2_666_528
+    assert inspected =~ "GPTModel("
+    assert inspected =~ "(W_query): LinearWithLoRA("
+
+    assert inspected =~
+             "linear=Linear(in_features=768, out_features=768, bias=true)"
+
+    assert inspected =~ "lora=LoRALayer(in_features=768, out_features=768, rank=16, alpha=16)"
+    assert inspected =~ "(0): LinearWithLoRA("
+    assert inspected =~ "lora=LoRALayer(in_features=768, out_features=3072, rank=16, alpha=16)"
+    assert inspected =~ "(out_head): LinearWithLoRA("
+    assert inspected =~ "lora=LoRALayer(in_features=768, out_features=2, rank=16, alpha=16)"
   end
 
   defp binary_instruction_collate(batch) do
