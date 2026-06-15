@@ -1220,6 +1220,172 @@ defmodule LlmFromScratch7Test do
     assert inspected =~ "lora=LoRALayer(in_features=768, out_features=2, rank=16, alpha=16)"
   end
 
+  @tag :download
+  @tag timeout: 3_600_000
+  test "exercise 7.4 fine-tunes instruction model with LoRA" do
+    device = use_accelerated_backend()
+    tokenizer = "code-davinci-002"
+    batch_size = 8
+    num_workers = 3
+
+    model =
+      "355M"
+      |> GPT2OpenAI.load_model(models_dir: "gpt2")
+      |> GPTModel.freeze()
+      |> LoRAUtils.replace_linear_with_lora(16, 16, include_output_head: true)
+      |> Nx.backend_transfer(device)
+
+    file_path =
+      System.tmp_dir!()
+      |> Path.join("llm_scratch_instruction_data")
+      |> Path.join("instruction-data.json")
+
+    data =
+      FineTuneDataLoader.download_and_load_instructions_file(
+        file_path,
+        @instruction_data_url
+      )
+
+    train_portion = trunc(length(data) * 0.85)
+    test_portion = trunc(length(data) * 0.1)
+    val_portion = length(data) - train_portion - test_portion
+    train_data = Enum.slice(data, 0, train_portion)
+    val_data = Enum.slice(data, train_portion + test_portion, val_portion)
+
+    train_dataset = InstructionDataset.new(train_data, tokenizer)
+    val_dataset = InstructionDataset.new(val_data, tokenizer)
+
+    :rand.seed(:exsss, {123, 123, 123})
+
+    train_loader =
+      DataLoader.new(train_dataset.encoded_texts,
+        batch_size: batch_size,
+        collate_fn: &binary_instruction_collate/1,
+        shuffle: true,
+        drop_last: true,
+        num_workers: num_workers
+      )
+
+    val_loader =
+      DataLoader.new(val_dataset.encoded_texts,
+        batch_size: batch_size,
+        collate_fn: &binary_instruction_collate/1,
+        shuffle: false,
+        drop_last: false,
+        num_workers: num_workers
+      )
+
+    input_text = val_data |> List.first() |> FineTuneDataLoader.format_input()
+    train_loss = LossUtils.calc_loss_loader(train_loader, model, device, 5)
+    val_loss = LossUtils.calc_loss_loader(val_loader, model, device, 5)
+    optimizer = Training.adamw(0.00005, weight_decay: 0.1)
+    num_epochs = 2
+
+    {trained_model, trained_optimizer, train_losses, val_losses, tokens_seen} =
+      Training.train_model_simple(
+        model,
+        train_loader,
+        val_loader,
+        optimizer,
+        device,
+        num_epochs,
+        5,
+        5,
+        input_text,
+        tokenizer,
+        generate_samples: false,
+        return_optimizer: true
+      )
+
+    checkpoint_path = "ch7_instruction_finetuned_gpt2_355m_lora_model_and_optimizer.nx"
+    ModelCheckpoint.save_training_state!(trained_model, trained_optimizer, checkpoint_path)
+
+    metrics_path = "ch7_instruction_finetuning_lora_metrics.json"
+
+    write_instruction_training_metrics!(
+      metrics_path,
+      num_epochs,
+      train_losses,
+      val_losses,
+      tokens_seen
+    )
+
+    assert length(data) == 1_100
+    assert length(train_data) == 935
+    assert length(val_data) == 55
+    assert train_loader.length == 116
+    assert val_loader.length == 7
+    assert model.trainable == [:lora]
+    assert GPTModel.trainable_parameters(model) == 7_898_384
+    assert_in_delta train_loss, 3.7422078609466554, 1.0e-5
+    assert_in_delta val_loss, 3.7619348049163817, 1.0e-5
+    assert input_text == FineTuneDataLoader.format_input(List.first(val_data))
+    assert trained_model.__struct__ == model.__struct__
+    assert trained_model.trainable == [:lora]
+    assert %Training.AdamW{} = trained_optimizer
+    assert File.exists?(checkpoint_path)
+    assert File.stat!(checkpoint_path).size > 0
+    assert File.exists?(metrics_path)
+    assert File.stat!(metrics_path).size > 0
+    assert length(train_losses) == 47
+    assert length(val_losses) == 47
+    assert length(tokens_seen) == 47
+    assert Enum.all?(train_losses ++ val_losses, &is_float/1)
+    assert Enum.all?(tokens_seen, &is_integer/1)
+    assert tokens_seen == Enum.sort(tokens_seen)
+    assert List.last(tokens_seen) > List.first(tokens_seen)
+  end
+
+  @tag :download
+  @tag :train
+  @tag :ollama
+  @tag timeout: 1_800_000
+  test "exercise 7.4 scores LoRA instruction model with Ollama" do
+    assert OllamaUtils.ollama_running?()
+
+    checkpoint_path = "ch7_instruction_finetuned_gpt2_355m_lora_model_and_optimizer.nx"
+
+    assert File.exists?(checkpoint_path)
+
+    device = use_accelerated_backend()
+    tokenizer = "code-davinci-002"
+
+    %{model_state_dict: model} = ModelCheckpoint.load_training_state!(checkpoint_path)
+    model = Nx.backend_transfer(model, device)
+
+    file_path =
+      System.tmp_dir!()
+      |> Path.join("llm_scratch_instruction_data")
+      |> Path.join("instruction-data.json")
+
+    data =
+      FineTuneDataLoader.download_and_load_instructions_file(
+        file_path,
+        @instruction_data_url
+      )
+
+    train_portion = trunc(length(data) * 0.85)
+    test_portion = trunc(length(data) * 0.1)
+    test_data = Enum.slice(data, train_portion, test_portion)
+
+    output_path = "instruction-data-with-response-lora.json"
+
+    enriched_data =
+      test_data
+      |> InstructionsEvaluation.write_responses!(model, tokenizer, device,
+        output_path: output_path
+      )
+
+    scores = InstructionsEvaluation.generate_model_scores(enriched_data, "model_response")
+    average_score = Enum.sum(scores) / length(scores)
+    baseline_average_score = 50.32
+    metrics_path = "ch7_instruction_finetuning_lora_ollama_scores.json"
+
+    write_ollama_score_metrics!(metrics_path, scores, average_score, baseline_average_score)
+
+    assert_in_delta average_score, 49.9, 0.4
+  end
+
   defp binary_instruction_collate(batch) do
     binary_instruction_collate(batch, nil)
   end
