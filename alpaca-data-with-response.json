@@ -1,0 +1,662 @@
+[
+  {
+    "input": "Grace",
+    "instruction": "Name a famous movie with the input name",
+    "model_response": "Grace is a famous movie with the input name.",
+    "output": "Grace Unplugged (2013)"
+  },
+  {
+    "input": "",
+    "instruction": "Name a popular singer from the US",
+    "model_response": ".\n\n\nTaylor Swift",
+    "output": "Taylor Swift"
+  },
+  {
+    "input": "erdnx",
+    "instruction": "Make up a new word using the following letters",
+    "model_response": "Erdnx",
+    "output": "erdnxology: the study of the nature and process of change."
+  },
+  {
+    "input": "https://www.livescience.com/54891-cats-dogs-pet-debate.html",
+    "instruction": "Summarize the article \"Cats vs Dogs: The classic pet debate\"",
+    "model_response": "The classic pet debate has been around for centuries, with cats and dogs being two of the most popular pets. Cats are known for their independence and love of people, while dogs are known for their loyalty and affection. Despite their differences, cats and dogs both have many of the same needs, such as food, exercise, and companionship. The debate has been ongoing for centuries, with cats and dogs both gaining in popularity over time.",
+    "output": "The age-old debate of cats vs dogs remains a hot topic among animal lovers. Dogs often require more attention and are better for families with kids, but cats are usually more independent and don't need as much exercise or training. Both cats and dogs have their pros and cons and have unique personalities, meaning there is no right or wrong pet. Ultimately, it comes down to personal preference."
+  },
+  {
+    "input": "",
+    "instruction": "Convert the phrase \"I had a great time\" into present tense.",
+    "model_response": "I have had a great time.",
+    "output": "I am having a great time."
+  },
+  {
+    "input": "",
+    "instruction": "Name two evidence-based benefits that sound therapy brings to people.",
+    "model_response": "Two evidence-based benefits that sound therapy brings to people include improved mental health and emotional well-being.",
+    "output": "Studies have shown that sound therapy can help alleviate stress and anxiety, improve mood, boost concentration and productivity, and promote relaxation."
+  },
+  {
+    "input": "",
+    "instruction": "Edit the following sentence to increase readability: \"He made a huge effort and was so successful.\"",
+    "model_response": "### Input:\nHe made a huge effort and was so successful.\n\n\nHe made a huge effort and was so successful.",
+    "output": "He exerted a tremendous effort, and thus enjoyed great success."
+  },
+  {
+    "input": "",
+    "instruction": "Compare the differences between HTML and JSON formats.",
+    "model_response": "HTML and JSON are two of the most popular web technologies. HTML is a markup language used to create webpages, while JSON is a data format used to store and manipulate data. HTML is a text-based format, while JSON is a binary format used to store and manipulate data. HTML is a single-page web application, while JSON is a multi-page web application. HTML is a data-driven format, while JSON is a data-driven format.",
+    "output": "HTML (HyperText Markup Language) is a markup language used to display data, while JSON (JavaScript Object Notation) is a lightweight data-interchange format. HTML is designed to display data in a structured format, while JSON is designed to transmit data between a server and a web application. HTML documents contain tags, while JSON objects contain data in name/value pairs. HTML documents are usually rendered in the browser, while JSON is primarily used to transfer data between a server and web application."
+  },
+  {
+    "input": "",
+    "instruction": "Classify the following sentence as a statement, question or command:\n\"Can you help me?\"",
+    "model_response": "Question",
+    "output": "Question"
+  },
+  {
+    "input": "",
+    "instruction": "Construct a mathematical equation that represents a linear relationship between two variables.",
+    "model_response": "### Input:\nx + y = 5\n\n\ny + x = 5",
+    "output": "y = mx + b"
+  },
+  {
+    "input": "",
+    "instruction": "Rewrite the following sentence to make it more concise: \"I was displeased with the result of the experiment that I conducted.\"",
+    "model_response": "I was displeased with the result of the experiment.",
+    "output": "I was unhappy with my experiment's outcome."
+  },
+  {
+    "input": "The product is an affordable solution for small businesses.",
+    "instruction": "Modify the following sentence to include a specific company or product.",
+    "model_response": "The company or product is an affordable solution for small businesses.",
+    "output": "Shopify is an affordable solution for small businesses."
+  },
+  {
+    "input": "",
+    "instruction": "What could be the advantage of using a GPT language model?",
+    "model_response": "The advantage of using a GPT language model is that it can generate natural language from a given prompt. GPT models are able to generate natural language from a given prompt, which can be used for a variety of tasks such as summarization, dialogue, and conversation. Additionally, GPT models are able to generate natural language from a given prompt, which can be used for a variety of tasks such as summarization, dialogue, and conversation.",
+    "output": "The main advantage of using a GPT language model is that it can generate more natural language than traditional models. A GPT model can generate a new text with the same meaning, similar writing style and coherent structure as the original sentence. Furthermore, it can quickly adapt to new datasets and understand nuances like context, sentiment and sentiment. This makes the GPT model useful in a variety of applications, such as machine translation, speech recognition, and text summarization."
+  },
+  {
+    "input": "1000",
+    "instruction": "Convert this binary number into decimal number.",
+    "model_response": "0.00",
+    "output": "8"
+  },
+  {
+    "input": "",
+    "instruction": "What do you understand by AI explainability?",
+    "model_response": "AI explainability is the ability of a system to explain its decisions and outcomes to a human observer. It is a concept that allows a system to explain its decisions and outcomes to a human observer in a way that is understandable and understandable. AI explainability is a key component of machine learning, which is a branch of artificial intelligence that enables computers to learn from data and experience. AI explainability allows a system to make decisions and predictions that are more accurate and reliable than those made by humans.",
+    "output": "AI explainability is the study of how artificial intelligence algorithms work and how to interpret the decisions they make. AI explainability techniques help researchers and practitioners to better understand and debug models, identify potential bias and errors in AI predictions, and ultimately make systems more transparent and trustworthy."
+  },
+  {
+    "input": "",
+    "instruction": "What is the term used to describe a bias where groups of people with some particular background or attributes are more likely to interact with the model in a certain way?",
+    "model_response": "The term used to describe a bias where groups of people with some particular background or attributes are more likely to interact with the model in a certain way is \"group bias\".",
+    "output": "The term used to describe this kind of bias is \"algorithmic bias\" or \"representational bias.\" Algorithmic bias occurs when a machine learning model predicts outcomes differently due to the target population's particular background or characteristics. This type of bias can harm those affected by it, as it can be based on gender, racial, and other demographic factors."
+  },
+  {
+    "input": "",
+    "instruction": "How can we build a more efficient GPT model?",
+    "model_response": "Building a more efficient GPT model requires careful consideration of the context in which the GPT model is being used. This can be done by analyzing the output of the GPT model, such as the number of words it produces, the number of sentences it produces, and the number of times it is used. Additionally, it is important to consider the context in which the GPT model is being used, such as the context of the text, the context of the context, and the context of the context. Additionally, it is important to consider the type of GPT model being used, such as a declarative, interrogative, exclamatory, or interrogative GPT model. Finally, it is important to consider the type of language being used, such as a conversational, narrative, or narrative GPT model.",
+    "output": "We can build a more efficient GPT model by optimizing the architecture of the model, using smaller model sizes and training with fewer parameters. We can also leverage techniques such as knowledge distillation, transfer learning, dynamic sparsity and hybrid computing to further improve the efficiency of the model."
+  },
+  {
+    "input": "",
+    "instruction": "In the context of GPT models, what is a language model?",
+    "model_response": "A language model is a set of instructions that a GPT model can generate based on a given context. It is a set of rules that a GPT model can follow to generate a sentence or a conversation. A language model can be used to generate text, images, and other visual elements, as well as to generate natural language.",
+    "output": "A language model is a type of artificial intelligence algorithm used to predict the likelihood of a sequence of words appearing together in a given language. GPT models use language models to generate human-like language, and the performance of these models can be evaluated in terms of how accurately they can complete language tasks."
+  },
+  {
+    "input": "",
+    "instruction": "Generate a sentence of at least 8 words which describes a task of GPT model.",
+    "model_response": "GPT model is able to generate natural language from a given prompt.",
+    "output": "GPT models can be used to generate natural-sounding texts in different languages."
+  },
+  {
+    "input": "",
+    "instruction": "Generate a story of a computer scientist who is solving a difficult problem",
+    "model_response": ".\n\n\nJohn was a computer scientist who had been working on a complex problem for years. He had been working on it for months, but it had become too complex and intricate. He had to find a solution that would make it easy for him to complete. He began to brainstorm ideas, but none seemed to be working. Finally, one day, he came up with a brilliant idea. He thought of a new way to solve the problem, and he began to work on it. He was amazed at the results he was able to achieve, and he was determined to make a difference.",
+    "output": "Dr. Jane Smith was an ambitious computer scientist, determined to solve one of the most difficult problems in the field. She worked tirelessly for days, nights, and weekends, trying every possible solution she could think of. Finally, after months of hard work and dedication, she cracked the problem and her reputation skyrocketed. Her story soon spread throughout the world, inspiring many aspiring computer scientists to follow in her footsteps."
+  },
+  {
+    "input": "",
+    "instruction": "What are the health effects of consuming too much sugar?",
+    "model_response": "The health effects of consuming too much sugar include obesity, diabetes, heart disease, and certain types of cancer.",
+    "output": "Consuming too much sugar can lead to a range of health problems, including weight gain, increased risk of type 2 diabetes, and increased risk of heart disease. It can also contribute to cavities and other dental issues, and can cause low energy levels and poor concentration."
+  },
+  {
+    "input": "",
+    "instruction": "Generate a paragraph describing the setting of a fantasy world",
+    "model_response": ".\n\n\nThe setting of the fantasy world was a dark and mysterious forest. The trees were tall and dark, and the sun shone down on the landscape. The air was filled with the sound of crickets and the rustling of leaves in the wind. The only light came from a few stars, twinkling in the darkness. The only sound was the distant hum of the creatures in the trees. The only thing that disturbed the peaceful atmosphere was the occasional rustling of leaves in the wind.",
+    "output": "The world of Tallen was a vast and mysterious one, filled with wondrous creatures and mysterious enchantments. It was a place of dreams and exploration, filled with lush forests and towering mountains, crystal clear lakes and rushing rivers, and expansive deserts and windswept plains. Parts of the world were unexplored, even by the wisest of scholars, and its secrets were waiting to be discovered."
+  },
+  {
+    "input": "",
+    "instruction": "Explain the concept of genetic drift to a layperson.",
+    "model_response": "Genetic drift is a process by which random changes in a population can lead to a change in the gene frequencies of certain individuals. It is caused by the random changes in the environment, such as the random mutation of genes that occur in a population. This random mutation can lead to changes in gene frequencies that are not seen in the population as a whole, leading to a change in the gene frequencies of certain individuals.",
+    "output": "Genetic drift is a phenomenon in which genetic variation within a population is reduced due to a random sampling of individuals. This random sampling can occur in a wide range of situations, but its most common occurrence is when a population is small in size or isolated. Over time, this can result in changes in the genetic makeup of a population, as certain genes become either more or less common. This has important implications for the diversity and health of populations."
+  },
+  {
+    "input": "",
+    "instruction": "Imagine an alternate world where humans no longer exist. Describe the environment.",
+    "model_response": "In this alternate world, humans have disappeared, replaced by a new species of creatures. They are tall and powerful, with horns and claws like knives. They are intelligent and crafty, and they live in harmony with nature. They have adapted to their new environment, and they have created a new way of living.",
+    "output": "In this alternate world, humans no longer exist and the environment has altered drastically. Nature is in full control, with plants overtaking overgrown cities and animals roaming freely. The air is clean and pure, and the landscape is filled with lush vegetation and bright flowers. The only sounds come from the buzzing of insects and the occasional chirping of birds."
+  },
+  {
+    "input": "Apple's products",
+    "instruction": "Generate a list of questions about a given real world topics.",
+    "model_response": "- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products?\n- What are the main features of Apple's products",
+    "output": "1. What are the different products that Apple offers?\n2. How have Apple's products evolved over time?\n3. What distinguishes Apple's products from those of its competitors?\n4. How have Apple's new products changed the tech industry?\n5. What are the pros and cons of Apple's products?\n6. What cutting-edge features does Apple's products offer?\n7. How does Apple ensure that their products are secure?\n8. How does Apple's design aesthetic influence their products?\n9. What impact have Apple's products had on society?\n10. What strategies does Apple use to promote its products?"
+  },
+  {
+    "input": "7, -4, 5, 1",
+    "instruction": "Order four numbers from greatest to least.",
+    "model_response": "-4, 5, 7, 1",
+    "output": "7, 5, 1, -4"
+  },
+  {
+    "input": "",
+    "instruction": "Create a new 5-word sentence using the words \"activism\", \"helpful\", \"remove\", \"large\", and \"people\".",
+    "model_response": "Helpful individuals remove large amounts of unnecessary activity.",
+    "output": "Large helpful people activism remove barriers."
+  },
+  {
+    "input": "",
+    "instruction": "Write the answer to 6+2 and explain why the number is correct.",
+    "model_response": "### Input:\n6+2\n\n\n6+2 is correct because the sum of 6 and 2 is equal to 6.",
+    "output": "The answer to 6+2 is 8. This is correct because when two numbers are added, the total number of units (represented by the second number in the sum) is added to the first number. Therefore, 6 + 2 = 8 because 2 units (represented by 2) is added to 6."
+  },
+  {
+    "input": "",
+    "instruction": "Give an example of an active sentence and passive sentence.",
+    "model_response": "The cat jumped onto the bed.",
+    "output": "Active sentence: Mary baked a delicious cake. \nPassive sentence: The delicious cake was baked by Mary."
+  },
+  {
+    "input": "",
+    "instruction": "Construct a Find/Replace command for the sentence \"The cat sat on the mat\".",
+    "model_response": "Find/Replace the sentence \"The cat sat on the mat\".",
+    "output": "Find: The cat sat on the mat \nReplace: The dog jumped off the couch"
+  },
+  {
+    "input": "",
+    "instruction": "Explain what a simile is and give an example of one.",
+    "model_response": "A simile is a figure of speech that compares two things in a way that conveys a feeling of similarity or contrast. For example, \"He was as strong as an ox\" or \"She was as strong as an ox\".",
+    "output": "A simile is a figure of speech that compares two things using the words \"like\" or \"as\". For example, the sky is like a vast ocean of stars."
+  },
+  {
+    "input": "",
+    "instruction": "Put the words \"dense\", \"mountains\", and \"green\" into an inspiring sentence.",
+    "model_response": "The mountains were green and dense with energy.",
+    "output": "The dense mountains were blanketed in a vivid green, inspiring awe and wonder."
+  },
+  {
+    "input": "",
+    "instruction": "Categorize the statement \"The temperature is hot today\" into a parts of speech.",
+    "model_response": "The statement \"The temperature is hot today\" can be categorized into a speech as a noun.",
+    "output": "The statement \"The temperature is hot today\" is composed of an article (the), an adjective (hot), and a noun (temperature)."
+  },
+  {
+    "input": "",
+    "instruction": "Create a list of 4 methods to improve focus and productivity while working.",
+    "model_response": "1. Set realistic goals and reward yourself for achieving them.\n2. Take regular breaks to stay focused and energized.\n3. Eliminate distractions and focus on one task at a time.\n4. Eliminate distractions and focus on one task at a time.",
+    "output": "Here are 4 methods to improve focus and productivity while working: \n1. Set specific goals and plan out tasks in advance to make sure you are staying on track.\n2. Take regular breaks and use this time to do an energizing activity such as walking, yoga, or stretching.\n3. Turn off notifications/social media to stay more focused.\n4. Use ambient noise or focus-inducing music to help create an environment conducive to productivity."
+  },
+  {
+    "input": "",
+    "instruction": "Write a few sentences about the impact of COVID-19 on the travel industry.",
+    "model_response": "The COVID-19 pandemic has had a significant impact on the travel industry. Travelers are now more vulnerable to the virus, as they are more likely to be at risk of contracting the virus due to their frequent travel. This has led to a decrease in the number of people visiting the world, as well as a decrease in the number of people visiting specific destinations. Additionally, the pandemic has caused a shift in the way people travel, as people are now more likely to travel to destinations that are less accessible or accessible due to the pandemic. This has led to a decrease in the number of people visiting certain cities, as well as a decrease in the number of people visiting certain locations.",
+    "output": "The COVID-19 pandemic has significantly impacted the travel industry. Travel restrictions, health protocols, and safety concerns have made it difficult for travelers to plan trips and for businesses to operate on any kind of normal level. Airlines, hotels, and other hospitality industry providers have been severely affected by lost revenues due to cancelled trips and a lack of people travelling. Even with the eventual rollout of vaccines, it is highly likely that the travel industry will never return to its pre-pandemic levels of activity."
+  },
+  {
+    "input": "Bananas, Milk, White Sugar, Vanilla Extract",
+    "instruction": "Using the following ingredients, give instructions for making banana splits.",
+    "model_response": "Instructions for Making Banana Splits:\n1. In a medium saucepan, combine the milk, sugar, vanilla extract, and the banana slices. Bring the mixture to a boil, then reduce the heat and simmer for 15 minutes.\n2. In a large bowl, whisk together the milk, sugar, vanilla extract, and the banana slices. Pour the mixture into the saucepan and let it steep for 15 minutes.\n3. In a separate bowl, whisk together the milk, sugar, vanilla extract, and the banana slices. Pour the mixture into the banana slices and let it steep for an additional 5 minutes.\n4. In a separate bowl, whisk together the milk, sugar, vanilla extract, and the banana slices. Pour the mixture into the banana slices and let it steep for an additional 5 minutes.\n5. In a separate bowl, whisk together the milk, sugar, vanilla extract, and the banana slices. Pour the mixture into the banana slices and let it steep for an additional 5 minutes.\n6. In a separate bowl, whisk together the milk, sugar, vanilla extract, and the banana slices. Pour the mixture into the banana slices and let it steep for an additional 5 minutes.\n7. In",
+    "output": "Instructions for Making Banana Splits: \n1. Peel and slice the banana.\n2. Place the sliced banana into a bowl. \n3. Heat the milk and sugar in a saucepan until the sugar has dissolved.\n4. Add the vanilla extract and stir until combined. \n5. Pour the milk and sugar mixture over the banana slices and stir lightly until the banana slices are fully coated.\n6. Place the banana slices into a bowl or dish and let cool. \n7. Serve with individual scoops of ice cream and toppings such as chopped nuts, chocolate chips, or whipped cream. Enjoy!"
+  },
+  {
+    "input": "Harry Potter, Voldemort, Hermione Granger",
+    "instruction": "Categorize the following characters into heroes and villains.",
+    "model_response": "Hero: Harry Potter\nVillain: Voldemort\nProtagonist: Hermione Granger",
+    "output": "Hero: Harry Potter, Hermione Granger \nVillain: Voldemort"
+  },
+  {
+    "input": "",
+    "instruction": "Come up with 3 different ways to reduce air pollution.",
+    "model_response": "1. Use renewable energy sources such as solar, wind, and geothermal power.\n2. Reduce the use of fossil fuels such as coal and oil.\n3. Reduce the use of vehicles by using public transportation, biking, and walking.",
+    "output": "Here are 3 ways to reduce air pollution: \n1. Increase the use of public transportation and reduce the use of private vehicles. \n2. Place stricter regulations on industrial activities that generate air pollution. \n3. Implement energy efficiency programs to decrease the use of electricity and energy generated from coal."
+  },
+  {
+    "input": "",
+    "instruction": "Name 5 events that took place during World War II.",
+    "model_response": "- The Battle of Stalingrad\n- The Battle of Britain\n- The Battle of Midway\n- The Battle of the Bulge\n- The Battle of the Elbe River\n- The Battle of the Western Front",
+    "output": "Here are 5 events that took place during World War II: \n1. The attack on Pearl Harbor on December 7th, 1941.\n2. The Battle of Midway in June 1942. \n3. The Holocaust from 1941 to 1945.\n4. The D-Day Invasion of Normandy in June 1944. \n5. The atomic bombings of Hiroshima and Nagasaki in August 1945."
+  },
+  {
+    "input": "",
+    "instruction": "Describe an example of collective action.",
+    "model_response": "An example of collective action is when people come together to take action to improve their own situation. For example, when a company is making a mistake, they may decide to offer a bonus or reward their employees for their hard work. This collective action helps to bring about change and encourages the employees to work harder and be more diligent.",
+    "output": "An example of collective action is a group of people coming together to work towards a common goal. A good example of this would be a citizens’ campaign that rallies people around a political cause, such as a petition to end the use of a certain type of pollutant. Collective action can also take the form of protests and strikes, such as protests to increase the minimum wage or strikes to ensure better working conditions."
+  },
+  {
+    "input": "Text A: \nThe world is full of beauty and wonder.\nText B:\nWe live in a world of beauty and mystery.",
+    "instruction": "What are the similarities and differences between the two texts?",
+    "model_response": "The similarities and differences between the two texts are that they both describe a world of beauty and mystery. The two texts also have similar themes of hope and despair.",
+    "output": "The similarities between the two texts are that they are both talking about the beauty and wonder of the world. The difference is that Text A uses the phrase \"full of beauty and wonder\" while Text B uses the phrase \"world of beauty and mystery\"."
+  },
+  {
+    "input": "",
+    "instruction": "Develop 2 strategies for reducing stress.",
+    "model_response": "1. Exercise regularly: Regular exercise can help reduce stress by releasing endorphins, which are chemicals in the body that make us feel good.\n2. Practice mindfulness: Mindfulness is a practice of focusing on the present moment and letting your thoughts drift away. It can help reduce stress by helping you to remember your thoughts and feelings, and it can also help you to relax and focus on your breath.",
+    "output": "Here are 2 strategies for reducing stress: \n1. Practice deep breathing and meditation. Taking the time to relax and breathe deeply is a great way to reduce stress. \n2. Exercise regularly. Regular physical activity can help to reduce stress and improve your mental wellbeing. Additionally, it can help to give you a sense of accomplishment and help to reduce negative thoughts."
+  },
+  {
+    "input": "",
+    "instruction": "Evaluate the following statement: \"The most important factor in predicting success is hard work.\"",
+    "model_response": "The statement is true, but it is not necessarily the most important factor in success. Other factors such as motivation, focus, and resilience can also play a role in determining success.",
+    "output": "Hard work is an important factor in achieving success, but it is not the only factor. Other things, such as intelligence, opportunity, luck, and a good support system, can also be major contributors."
+  },
+  {
+    "input": "",
+    "instruction": "Classify the following statement as true or false: The internet was invented in the year 1958.",
+    "model_response": "True",
+    "output": "False. The internet was invented in the year 1969."
+  },
+  {
+    "input": "",
+    "instruction": "Think of two words that mean the same thing and are spelled differently.",
+    "model_response": "The two words that mean the same thing and are spelled differently are \"moon\" and \"moonbeam\".",
+    "output": "Two words that mean the same thing but are spelled differently are complementary and complimentary."
+  },
+  {
+    "input": "",
+    "instruction": "Translate this sentence into French: \"I ate breakfast at nine o'clock this morning.\"",
+    "model_response": "J'ai mangéon à la recherche du 9 o'clock this morning.",
+    "output": "J'ai pris mon petit déjeuner à neuf heures ce matin."
+  },
+  {
+    "input": "",
+    "instruction": "Simplify this equation: 18x + 12 / 6",
+    "model_response": "18x + 12 / 6 = 12",
+    "output": "The simplified equation is 3x + 2."
+  },
+  {
+    "input": "Dinosaur, Magic",
+    "instruction": "Create a videogame concept based on the following keywords",
+    "model_response": ", Adventure\n\n\nDinosaur Adventure Magic Adventure",
+    "output": "The player takes on the role of an ambitious wizard in a world of dinosaurs, where magical powers are the only way to stay alive. The player must explore the world to gain new spells and gain ancient knowledge of powerful magic. Along the way the player will battle powerful dinosaurs using a combination of their magical powers and physical combat to succeed. As the player progresses, they will gain access to more powerful magic, new spells and powerful abilities. Each of these abilities must be mastered to progress to the next level. In the end, the player will face off against the toughest opponent of all, the dreaded T-Rex."
+  },
+  {
+    "input": "We believe in the power of music",
+    "instruction": "Turn this sentence into a tagline",
+    "model_response": "\"Music is the key to happiness.\"",
+    "output": "Music: Power to Believe"
+  },
+  {
+    "input": "We need to put our phones away",
+    "instruction": "Rewrite the sentence to turn it into a rhetorical question.",
+    "model_response": ".\n\n\nWhat do we need to do to put our phones away?",
+    "output": "Shouldn't we put our phones away?"
+  },
+  {
+    "input": "\"What we think, we become\" -Buddha",
+    "instruction": "Given a famous quote, explain its meaning.",
+    "model_response": "This quote by Buddha emphasizes the importance of taking on the responsibility of transforming one's thoughts, beliefs, and behaviors. It suggests that the only way to achieve success is to take on the responsibility of transforming one's thoughts, beliefs, and behaviors. This can be done through meditation, self-awareness, and other practices.",
+    "output": "This quote is attributed to the Buddha, and is thought to suggest that our thoughts have a profound effect on our lives and our destiny. The idea is that we create our own life experiences by what we think, and so by having positive thoughts, we can create positive circumstances in our lives. Alternatively, it implies that if someone focuses too deeply on negative ideas, they can bring negative aspects into their life. Our thoughts and attitudes can shape our lives and so it is wise to focus on positive ideas."
+  },
+  {
+    "input": "https://news.harvard.edu/gazette/story/2017/04/harvard-marks-its-375th-anniversary/",
+    "instruction": "Read the following article and generate 5 questions that can be asked about it",
+    "model_response": "1. What is the significance of Harvard’s 375th Anniversary?\n2. What is the significance of Harvard’s 375th Anniversary?\n3. What is the significance of Harvard’s 375th Anniversary?\n4. What is the significance of Harvard’s 375th Anniversary?\n5. What is the significance of Harvard’s 375th Anniversary?",
+    "output": "1. What significant events happened during Harvard's 375th Anniversary? \n2. What impact has Harvard had on academic research and education? \n3. How has Harvard evolved over the past 375 years? \n4. What are some of Harvard's notable alumni? \n5. How has Harvard contributed to the community and society during its 375th Anniversary?"
+  },
+  {
+    "input": "Cold, Night, Stars",
+    "instruction": "Imagine a scene in a story using the given elements.",
+    "model_response": "The night was dark and silent, the stars shining down on the snow-covered landscape. A small, pale figure stood in the snow, watching the stars. He was filled with wonder, and he felt a deep connection to the universe. He could feel the warmth of the stars, and the darkness of the night. He could feel the warmth of the night, and the darkness of the night. He could feel the warmth of the stars, and the darkness of the night. He could feel the warmth of the stars, and the darkness of the night. He could feel the warmth of the stars, and the darkness of the night. He could feel the warmth of the stars, and the darkness of the night. He could feel the stars, and the darkness of the night. He could feel the stars, and the darkness of the night. He could feel the stars, and the darkness of the night. He could feel the stars, and the darkness of the night. He could feel the stars, and the darkness of the night. He could feel the stars, and the darkness of the night. He could feel the stars, and the darkness of the night. He could feel the stars, and the darkness of the night. He could",
+    "output": "The night was cold and still, the stars twinkling in the pitch black sky like a million distant fireflies. A solitary figure huddled in the darkness, taking in the beauty of the night sky, and for a moment the world was in perfect harmony."
+  },
+  {
+    "input": "",
+    "instruction": "Create a story about a person who is looking for a job and struggling with their decision.",
+    "model_response": "John was a college student looking for a job. He had been studying for months and was determined to make a name for himself. He had a few offers, but none of them seemed to match his skills and qualifications. He was determined to make a name for himself and was determined to make a difference in the world. He started to look for jobs online and eventually found a job as a web designer. He was ecstatic, but he was also a bit scared. He had never worked in the same environment before and was unsure of how he would handle the job. He was determined to make a difference and was determined to make a difference in the world.",
+    "output": "John was in a dilemma. After four months of searching, he had finally gotten an offer from a prestigious company, but he wasn't sure if he wanted to take the job. On the one hand, the job offered a great salary, and it would look great on his resume. On the other, the company was known to have a difficult and demanding work environment, and he was afraid that he wouldn't be able to keep up with the expectations. He had already gone through so many interviews, and this job offer was like a dream come true. But, could he handle the pressure? He was terrified that he would make a wrong decision and regret it for the rest of his life. All he wanted was to find the right job and he was struggling to make the best decision for his future."
+  },
+  {
+    "input": "",
+    "instruction": "Describe the advantages of using AI for crime detection.",
+    "model_response": "AI can be used for crime detection by analyzing large amounts of data from a variety of sources, such as surveillance cameras, eyewitnesses, and databases. AI can also be used to identify patterns in crime data, such as the locations of crime and the time of day, which can help to identify potential suspects. AI can also be used to identify potential suspects based on their behavior, such as when they are seen in a certain area, or when they are seen in a certain location. Additionally, AI can be used to identify potential criminals based on their past behavior, such as when they have been arrested or convicted.",
+    "output": "AI can be immensely helpful for crime detection as it can help law enforcement agencies in making decisions, gathering evidence, identifying suspects, and helpful witness interviews. AI can significantly reduce the amount of time spent on investigations, and also make it easier to process data quickly and accurately. AI can also assist with the analysis of surveillance footage and generate alerts in cases of suspicious behaviour. As AI continues to improve, its use in law enforcement can help to reduce the occurrence of crime and efficiently detect and apprehend criminals."
+  },
+  {
+    "input": "",
+    "instruction": "Generate a fashion outfit for a summer day.",
+    "model_response": "For a summer day, a classic fashion outfit would be perfect. A light blue blazer, a pair of jeans, and a pair of sneakers would be the perfect choice. A pair of dress shoes and a pair of dress pants would also be a great option.",
+    "output": "A bright floral shift dress, white sneakers, and a navy blue sun hat."
+  },
+  {
+    "input": "The house have three rooms.\nThe house has three rooms.",
+    "instruction": "Identify the grammatically correct sentence among the following two.",
+    "model_response": "The house has three rooms.",
+    "output": "The house has three rooms."
+  },
+  {
+    "input": "",
+    "instruction": "Generate a code in Python that calculates the square root of any given number.",
+    "model_response": "def calculate_sqrt(num):\n  # calculate the square root of the given number\n  sqrt = 0\n \n \n  # square root is the sum of the squares of the two numbers\n  for i in range(2, num):\n  sqrt += i * i\n \n  # calculate the square root of the given number\n  sqrt = sqrt * sqrt\n \n \n  # square root is the sum of the squares of the two numbers\n  for j in range(2, num):\n  sqrt += j * sqrt\n \n \n  # calculate the square root of the given number\n  sqrt = sqrt * sqrt\n \n \n  # square root is the sum of the squares of the two numbers\n  for i in range(2, num):\n  sqrt += i * i\n \n \n  # calculate the square root of the given number\n  sqrt = sqrt * sqrt\n \n \n  # square root is the sum of the squares of the two numbers\n  for j in range(2, num):\n  sqrt += i *",
+    "output": "def square_root(num):\n    return num ** (1/2)"
+  },
+  {
+    "input": "",
+    "instruction": "Name and define three kings of classification.",
+    "model_response": "Three kings of classification are Augustus Caesar, Julius Caesar, and Augustus Gellius. Augustus Caesar was the first emperor of the Roman Empire and was known for his military prowess and leadership. Julius Caesar was the second emperor of the Roman Empire and was known for his military prowess and leadership. Augustus Gellius was the third emperor of the Roman Empire and was known for his administrative and military prowess.",
+    "output": "1. Binary Classification: Binary classification is the process of classifying an item into one of two predefined categories. Examples include determining an image as either a cat or a dog.\n\n2. Multi-class classification: Multi-class classification is the process of classifying an item into one of more than two predefined categories. Examples include determining the species of a plant or animal.\n\n3. Multi-label classification: Multi-label classification is the process of classifying an item into multiple predefined categories. Examples include identifying the genre of a piece of literature or the moods portrayed in a photograph."
+  },
+  {
+    "input": "",
+    "instruction": "Name a feature of a laptop that relates to performance.",
+    "model_response": "One of the features of a laptop that relates to performance is its processor. Laptops are typically equipped with a processor, RAM, and storage, which allows for quick and efficient computing.",
+    "output": "The processor of a laptop is one of the main factors that determine its performance. The faster and more powerful the processor, the better performance a laptop will have."
+  },
+  {
+    "input": "",
+    "instruction": "Write a story beginning with:\" He had never seen the world beyond his mountain home\"",
+    "model_response": "He had never seen the world beyond his mountain home. He had grown up in a small town, surrounded by the hustle and bustle of the city. He had never seen the sun, the sky, or the sea. He had never seen the trees, the birds, or the animals. He had never seen the stars, or the sun. He had never seen the sea, or the trees, or the birds. He had never seen the mountains, or the valleys, or the plains. He had never seen the stars, or the sun, or the sea. He had never seen the world beyond his mountain home.",
+    "output": "He had never seen the world beyond his mountain home, though he had heard stories of its wonders. As a young boy he had dreamed of what it would be like to explore the world outside his village. Finally, when he was 18, his father gave him the chance to take a journey beyond their mountain home. He explored valleys and hills, oceans and deserts, and everywhere he went he saw beauty and wonder that surpassed his dreams. On his journey he made friends, discovered new cultures and customs, and eventually found a way to return to his mountain home. He was now forever changed by his great adventure and eager to share what he had discovered."
+  },
+  {
+    "input": "",
+    "instruction": "Write a Facebook post about baking",
+    "model_response": "a cake.\n\n\nWe all know that baking a cake is one of the most delicious and unique activities around. It's a great way to celebrate special occasions, make a delicious and unique dish, and make a special memory. So make sure to bake a cake today and make your guests smile! #BakeAway #CelebrateWithLove",
+    "output": "Did someone say baking? I had a fantastic day baking cake today! I used fresh ingredients and it's smelling delicious in the kitchen. There's nothing that compares to the smell of homemade goodies in the oven. #baking #cake #sweettooth"
+  },
+  {
+    "input": "You are wrong.",
+    "instruction": "Rewrite the sentence to change its tone.",
+    "model_response": "You should be careful what you wish for.",
+    "output": "I don't think that's right."
+  },
+  {
+    "input": "Walked 4km in the morning and 3km in the evening",
+    "instruction": "Calculate the total distance traveled.",
+    "model_response": ".\n\n\nThe total distance traveled was 4km.",
+    "output": "7km"
+  },
+  {
+    "input": "Dog",
+    "instruction": "Describe the object using as many adjectives as you can.",
+    "model_response": "Large, energetic, cuddly, cuddly-like, cuddly-like, energetic, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like, energetic-like,",
+    "output": "Curious, loyal, playful, affectionate, friendly, obedient, intelligent, alert, energetic."
+  },
+  {
+    "input": "Sound wave of the ocean",
+    "instruction": "Analyze a given sound wave.",
+    "model_response": "waves\n\n\nThe sound wave of the ocean waves is composed of a mix of sound waves, some coming from the surface of the ocean, some coming from the depths of the ocean, and some coming from the air. The waves are often accompanied by a gentle breeze, and the sound waves can be heard in the background.",
+    "output": "The sound wave of the ocean contains frequencies ranging from 20Hz to 20kHz with different amplitudes. The low frequency sound waves have a longer wave length and have more energy, while the higher frequency sound waves have a shorter wave length and less energy."
+  },
+  {
+    "input": "Tree",
+    "instruction": "Modify the words to be more descriptive.",
+    "model_response": "The tree stood tall and proud, its branches swaying in the gentle breeze.",
+    "output": "Enormous, towering, towering, leafy, evergreen tree."
+  },
+  {
+    "input": "",
+    "instruction": "Explain what is bond yield",
+    "model_response": ".\n\n\nBond yield is the amount of energy required to create a bond between two molecules. It is measured in Joules per gram of material. Bond yield is determined by the amount of energy required to create a bond between two molecules, and is usually expressed as a percentage.",
+    "output": "Bond yield is the rate of return on a bond that an investor receives from owning it. Bond yield is generally expressed as a percentage of the bond's face value and reflects the current market value of the bond. Bond yield usually takes into account the coupon rate, the repayment dates and the current market value of the bond. Bond yield can also be thought of as the rate of return on a bond if it was held until it matures."
+  },
+  {
+    "input": "Mark Zuckerberg is the CEO of Facebook.",
+    "instruction": "Generate a smart question related to the content",
+    "model_response": "What is Mark Zuckerberg's most important accomplishment as CEO of Facebook?",
+    "output": "What is Mark Zuckerberg's role in Facebook?"
+  },
+  {
+    "input": "Constant, Variable",
+    "instruction": "For each item in the list, give a real-life example",
+    "model_response": ", Time\n\n\nFor example, if I had to buy a new car every month, I would buy a new car every month.",
+    "output": "Constant: The speed of light \nVariable: Temperature changes with season."
+  },
+  {
+    "input": "",
+    "instruction": "Formulate a single question that requires a yes or no answer.",
+    "model_response": "### Input:\nThe cat is sleeping.\n\n\nIs the cat sleeping?",
+    "output": "Is the sky blue?"
+  },
+  {
+    "input": "",
+    "instruction": "Identify the differences between an amphibian and a reptile.",
+    "model_response": "The main difference between an amphibian and a reptile is that amphibians are amphibians that live on land while reptiles are amphibians that live on land. Amphibians are typically found in the water, while reptiles are typically found in the ground. Amphibians also typically have a more varied diet than reptiles, and they are typically more active during the day. Reptiles, on the other hand, typically only eat insects and other small animals.",
+    "output": "Amphibians have a soft, moist skin, while reptiles have dry, scaly skin. Amphibians typically lay eggs in water, and reptiles lay eggs on land. Reptiles are cold-blooded, while amphibians can regulate their body temperatures. Additionally, reptiles usually have four legs, while amphibians may have four or more."
+  },
+  {
+    "input": "",
+    "instruction": "Generate a creative story of 200 words or less.",
+    "model_response": "Once upon a time, there was a young girl named Sarah who was determined to make a difference in the world. She had always been a bit of a dreamer, but she was determined to make a difference in the world. One day, Sarah decided to take a journey to a faraway land. She was filled with excitement as she set off on her journey, but soon realized that the journey was not going to be easy. She encountered many obstacles along the way, but she was determined to make it through. Sarah eventually reached her destination, and she was filled with joy. She realized that the world was a much better place because of her efforts.",
+    "output": "Once upon a time, there was a young princess living in a large kingdom. By day, she was a warrior fighting for justice, slaying dragons with her sword and shield. But in the dark of night, all she ever wanted to do was dance. She would sneak off to the forest and dance, letting her body move to the music of the stars and the moon. \n\nOne night, as she danced, she heard the distant sound of a violin playing. Entranced, she followed the music, dancing in time with the melody and search for the source of the sound. \n\nIn the distance, she saw a mysterious figure playing the instrument, its face hidden in the shadows as it continued to weave its melody. She stopped to listen, not wanting to disturb the stranger's performance. \n\nThe moment the mysterious figure finished, it put down the violin and stepped out from the shadows. It was a wizard, come to check on the princess and make sure she was alright. The wizard had seen her dancing in the forest, and played for her so that she could keep going even when the music had stopped.\n\nThe princess thanked the wizard for the gift of music and, from that day forward, she and the wizard were not just friends, but partners in adventures and stories to come."
+  },
+  {
+    "input": "2, 4, 6, 8",
+    "instruction": "Given the following list of items, find their sum.",
+    "model_response": "The sum of 2, 4, 6, 8 is 16.",
+    "output": ""
+  },
+  {
+    "input": "",
+    "instruction": "Describe a hypothesis related to a study.",
+    "model_response": "### Input:\nThe study found that people who eat more plant-based foods are more likely to be physically active.\n\n\nThe hypothesis is that people who eat more plant-based foods are more likely to be physically active.",
+    "output": "The hypothesis of this study is that increased exposure to television has a negative impact on adolescents' cognitive development."
+  },
+  {
+    "input": "",
+    "instruction": "Compose a limerick that follows a rhyme scheme of AABBA.",
+    "model_response": "There once was a man who was so proud of his car that he kept it as a souvenir.\n\nHe had a car that was so grand, it was a sight to see.\nIt was so grand, it was a sight to see.\n\nHe had a car that was so grand, it was a sight to see.\nIt was so grand, it was a sight to see.",
+    "output": "There was a young girl from the South,\nWho always spoke with her mouth,\nHer lively and light banter,\nPut everyone in a jaunter,\nLighting up any room with her pout."
+  },
+  {
+    "input": "Table:\nProduct   | Sales\n--------- | -----\nApples   | 5000\nOranges  | 4500\nBananas  | 3000",
+    "instruction": "Given the following table, generate a bar chart that displays the total sales of each product.",
+    "model_response": "Grapes | 2500\nStrawberries | 2500\n\n\n| Product | Sales  | \n| -------- | -------- |\n| Apples | 5000 | \n| Oranges | 4500 | \n| Bananas | 3000 | \n| Grapes | 2500 | \n| Strawberries | 2500 | \n| Oranges | 2500 | \n| Strawberries | 2500 | \n| Oranges | 2500 | \n| Grapes | 2500 | \n| Strawberries | 2500 | \n| Oranges | 2500 | \n| Strawberries | 2500 | \n| Oranges | 2500 | \n| Grapes | 2500 | \n| Oranges | 2500 | \n| Strawberries | 2500 | \n| Oranges | 2500 | \n| Grapes | 2500 | \n| Strawberries | 2500 | \n| Oranges | 2500 | \n| Strawberries | 2500 | \n| Grapes | 2500 | \n| Oranges | 2500 | \n| Strawberries | 2500 | \n| Grapes | 2500 | \n| Oranges | 2500 | \n| Strawberries | 2500 | \n|",
+    "output": "A bar chart with three bars, representing the products Apples, Oranges, and Bananas, showing the sales for each product with labels and the corresponding sales."
+  },
+  {
+    "input": "",
+    "instruction": "Brainstorm two marketing strategies for a new shoe company.",
+    "model_response": "1. Online advertising: Using social media to reach a wider audience and build brand awareness.\n2. Print advertising: Using print advertising to reach a wider audience and build brand awareness.",
+    "output": "Strategy 1: Partner with popular influencers to promote and advertise the shoes. \n\nStrategy 2: Launch an online store to increase customer reach and introduce seasonal discounts to incentivize customers to buy."
+  },
+  {
+    "input": "",
+    "instruction": "Describe a situation when algebra can be used to solve a problem.",
+    "model_response": "Algebra can be used to solve a problem in a variety of ways. For example, it can be used to calculate the sum of two numbers, or to calculate the sum of two fractions. It can also be used to solve complex equations, such as the equation x^2 + y^2 = z^2.",
+    "output": "Algebra can be used to calculate a break even point in a business. For example, a business can use algebra to determine the number of products it needs to sell to cover its costs and make a profit."
+  },
+  {
+    "input": "Table:\nItem         | Revenue | Category\n------------ | --------|----------\nItem 1       |  200    | A\nItem 2       |  250    | B\nItem 3       |  300    | A",
+    "instruction": "Given the following table, write a query to find the total revenue from items of category A.",
+    "model_response": "Item 4 |  400 | B\n\n\nSELECT SUM(A.total_revenue) FROM items WHERE category = 'A' ORDER BY SUM(A.total_revenue) DESC LIMIT 1",
+    "output": "SELECT SUM(r.Revenue) FROM table r WHERE r.Category = 'A';"
+  },
+  {
+    "input": "",
+    "instruction": "Name a sandwich whose primary ingredient is not meat.",
+    "model_response": "A sandwich that does not contain meat is a sandwich that is not meat-based.",
+    "output": "Egg Salad Sandwich. It is typically made from boiled eggs and mayonnaise. Other ingredients can also be added. Some examples are sliced pickles, onions, celery, salt, and pepper. Another variation can include tomatoes, lettuce, and spinach."
+  },
+  {
+    "input": "",
+    "instruction": "Determine what percentage two thirds of fifty is.",
+    "model_response": "The percentage two thirds of fifty is fifty.",
+    "output": "Two thirds of fifty is 33.333 recurring. As a percentage, it is 33.333%, or 33 1/3 %."
+  },
+  {
+    "input": "",
+    "instruction": "Put together a five-step plan to save water.",
+    "model_response": "1. Reduce water usage by taking shorter showers, using a bucket or a bucket and a hose to collect rainwater, and using a water-saving shower head.\n2. Install water-saving appliances such as a water-efficient washing machine, a water-saving shower head, and a water-saving dishwasher.\n3. Install a water-saving shower mat and a bucket to collect rainwater.\n4. Use a bucket to collect water from the garden or use a garden hose to collect rainwater from the street.\n5. Install a water-saving shower head and a water-saving dishwasher.",
+    "output": "1. Install water-saving fixtures and appliances, such as low-flow toilets, faucets, and showerheads.\n2. Run full loads of laundry and dishes, only when necessary.\n3. Fix leaks in plumbing and water lines.\n4. Collect rainwater for watering plants or washing cars.\n5. Limit showers and baths to only a few minutes. Additionally, turn off the tap when brushing teeth or shaving."
+  },
+  {
+    "input": "",
+    "instruction": "Find the mathematical equation for the perimeter of the square with sides of length a.",
+    "model_response": "The mathematical equation for the perimeter of the square with sides of length a is P(a) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1) = P(a+1)",
+    "output": "The formula for the perimeter of a square with sides of length a is P = a*4."
+  },
+  {
+    "input": "I will be helping her.",
+    "instruction": "Rewrite this sentence using another grammatical structure.",
+    "model_response": "I will be helping her.",
+    "output": "Her assistance will be provided by me."
+  },
+  {
+    "input": "",
+    "instruction": "Make a list of the symptoms of the common cold.",
+    "model_response": "The symptoms of the common cold include a runny or stuffy nose, coughing, sore throat, headache, fatigue, and loss of appetite.",
+    "output": "The symptoms of the common cold typically include a runny nose, sneezing, coughing, sore throat, fatigue, congestion, post nasal drip, watery eyes, and headache."
+  },
+  {
+    "input": "",
+    "instruction": "Find the pitch of a string with a frequency of 256 Hz.",
+    "model_response": "The pitch of the string with a frequency of 256 Hz is 8.",
+    "output": "The pitch of a string with a frequency of 256 Hz is A3."
+  },
+  {
+    "input": "",
+    "instruction": "Describe the importance of conservation of biodiversity.",
+    "model_response": "Conservation of biodiversity is essential for maintaining the natural balance of the Earth's ecosystems. It involves protecting the habitats and ecosystems that support life on Earth, such as forests, grasslands, and oceans. This includes protecting species that are already endangered, as well as those that are more endangered. Conservation of biodiversity also includes reducing the amount of land that is used for farming, as well as reducing the amount of water that is used for irrigation.",
+    "output": "Conservation of biodiversity is essential as it maintains the food chain and balances the ecosystem. It also safeguards vulnerabilities such as biological resources,economic resources, scientific information, and culture diversity. In addition, preserving biodiversity increases the potential for medicines, fuels, and more."
+  },
+  {
+    "input": "",
+    "instruction": "Name one decade that contained the most significant events in the history of the United States.",
+    "model_response": "The two most significant decades that contained the most significant events in the history of the United States are the Cold War and the Industrial Revolution.",
+    "output": "The 1960s was an important decade for the United States, with significant events such as the civil rights movement, the Vietnam War, the first moon landing, and the election of the first African American president, among many others."
+  },
+  {
+    "input": "",
+    "instruction": "Find the total price for 3 items, each costing 8.99.",
+    "model_response": "### Input:\nItem 1: Apple\nItem 2: Orange\nItem 3: Banana\n\n\nThe total price for 3 items is $8.99.",
+    "output": "The total price for 3 items costing 8.99 each is 26.97."
+  },
+  {
+    "input": "Hair dryer.",
+    "instruction": "Categorize this product as either an \"essential\" or \"non-essential\".",
+    "model_response": "Essential",
+    "output": "The product is categorized as a non-essential."
+  },
+  {
+    "input": "",
+    "instruction": "Explain the uses of big data",
+    "model_response": "in marketing.\n\n\nBig data can be used in marketing to gain insights into customer behavior, target customers, and measure customer satisfaction. It can also be used to measure the performance of campaigns, identify trends, and measure the effectiveness of campaigns. Additionally, big data can be used to measure the performance of campaigns, identify customer preferences, and measure the effectiveness of marketing efforts.",
+    "output": "Big data can be used to identify trends and patterns in large sets of data and make predictions and decisions. It can also be used to analyze customer behavior, predict financial markets, identify new products and services, and improve operational performance. Big data helps companies make better decisions, improve customer support, and increase profitability."
+  },
+  {
+    "input": "The Hunger Games by Suzanne Collins",
+    "instruction": "classifty the genre of this book",
+    "model_response": "The Hunger Games by Suzanne Collins",
+    "output": "Young Adult Fiction"
+  },
+  {
+    "input": "",
+    "instruction": "Generae a poem about the ocean",
+    "model_response": ".\n\n\nThe ocean is a beautiful sight,\nA vast expanse of blue,\nA tranquil sea,\nA place of peace and serenity.\n\nThe waves crash against the shore,\nThe sun shines down,\nA beautiful sight,\nA tranquil sea,\nA place of peace and serenity.",
+    "output": "The ocean is a wondrous thing, \nIts depths untold and secrets hidden within.\nA mystery that spans time and space,\nA beautiful sight that can never be erased.\nIt calms us with its endless lull,\nA serene and majestic lull.\nAs sunlight dances upon its waves,\nWe can no longer be slaves.\nTo the rhythm of the undulating sea,\nWe can be forever free."
+  },
+  {
+    "input": "",
+    "instruction": "Name 5 healthy fruits",
+    "model_response": ".\n\n\n1. Apples\n2. Bananas\n3. Oranges\n4. Grapes\n5. Strawberries",
+    "output": "Apples, oranges, bananas, strawberries and grapefruit."
+  },
+  {
+    "input": "\"You can't trust what they say because they've been wrong before.\"",
+    "instruction": "Consider the following statement, which type of logical fallacy is being used?",
+    "model_response": "The statement is an example of the Appeal to Authority fallacy, which is a type of logical fallacy where an argument is presented as fact, while the evidence is presented as opinion.",
+    "output": "The logical fallacy used in this statement is an Appeal to Authority. It is arguing that because the other party has been wrong before, their current statement is untrue."
+  },
+  {
+    "input": "1, 2, 3, 6, 8",
+    "instruction": "Given the list of numbers (1, 2, 3, 6, 8), find the missing value.",
+    "model_response": "The missing value is 8.",
+    "output": "The missing value is 4."
+  },
+  {
+    "input": "",
+    "instruction": "Describe the causes and symptoms of depression.",
+    "model_response": "Depression is a mental health condition characterized by persistent sadness, feelings of worthlessness, and avoidance of social activities. It can be caused by a variety of factors, including genetics, environment, and lifestyle. Common symptoms of depression include loss of interest in activities, decreased appetite, fatigue, and sleep disturbances.",
+    "output": "Depression is caused by a combination of genetic, environmental, emotional, and interpersonal factors. The main symptoms may include sadness, lack of motivation, fatigue, difficulty concentrating, changes in appetite and sleep patterns, low self-esteem, and thoughts of suicide."
+  },
+  {
+    "input": "",
+    "instruction": "Write a couple of sentences that describe the characteristics of a democracy.",
+    "model_response": "A democracy is a representative, representative, and accountable form of government. It is based on the principle of equality and the rule of law. Democracies are based on the principle of popular sovereignty and the idea that citizens should have the right to participate in the decision-making process. Democracies also have a strong sense of civic responsibility and a commitment to the rule of law. Democracies also have a strong sense of civic engagement and a commitment to the public good. Democracies also have a strong sense of civic engagement and a commitment to the public good. Democracies also have a strong sense of civic responsibility and a commitment to the public good. Democracies also have a strong sense of civic engagement and a commitment to the public good. Democracies also have a strong sense of civic responsibility and a commitment to the public good. Democracies also have a strong sense of civic engagement and a commitment to the public good. Democracies also have a strong sense of civic responsibility and a commitment to the public good. Democracies also have a strong sense of civic engagement and a commitment to the public good. Democracies also have a strong sense of civic responsibility and a commitment to the public good. Democracies also have a strong sense of civic engagement and a commitment",
+    "output": "A democracy is a system of government that is based on majority rule and the protection of individual rights. Democracies focus on the idea of individual liberty, as citizens in a democracy are free to express their opinions and participate in decisions that affect their lives."
+  },
+  {
+    "input": "",
+    "instruction": "Generate a response if someone asks you \"How are you?\"",
+    "model_response": "I'm doing well.",
+    "output": "I'm doing well, thank you for asking. How about you?"
+  },
+  {
+    "input": "blue, seven, imagine",
+    "instruction": "Collect the items from the following list that represent nouns",
+    "model_response": "blue, seven, imagine",
+    "output": "blue, seven"
+  },
+  {
+    "input": "",
+    "instruction": "What is the most important action to take for reducing one’s carbon footprint?",
+    "model_response": "The most important action to take for reducing one’s carbon footprint is to reduce one’s consumption of fossil fuels. This can be done by reducing the amount of energy and water consumed, as well as by switching to renewable energy sources such as solar, wind, and geothermal. Additionally, reducing one’s use of cars and other forms of transportation can help reduce one’s carbon footprint.",
+    "output": "Reduce dependence on fossil fuels by using renewable energy sources such as solar and wind power."
+  },
+  {
+    "input": "",
+    "instruction": "How many feet on a yard?",
+    "model_response": "One foot on a yard is equal to about 8.5 feet.",
+    "output": "Three feet in a yard."
+  },
+  {
+    "input": "",
+    "instruction": "Tell me why the hypothalamus is an important part of the brain.",
+    "model_response": "The hypothalamus is an important part of the brain because it is responsible for regulating body temperature, hormones, and other physiological processes. It also plays a role in regulating the body's hunger, thirst, and thirst control. Additionally, it is involved in regulating body posture, body temperature, and body posture control.",
+    "output": "The hypothalamus is an important part of the brain because it is responsible for regulating metabolism, thirst, hunger, and body temperature. It also plays a role in regulating hormones, controlling behavior, and managing heart rate and blood pressure."
+  },
+  {
+    "input": "",
+    "instruction": "Generate the structure of a beer brewing process.",
+    "model_response": "The structure of a beer brewing process can be broken down into three main components: the boil, the secondary fermentation, and the bottling. The boil is the process of boiling water to extract the essential oils and sugars from the beer. The secondary fermentation is the process of fermentation in which the sugars are converted into alcohol and carbon dioxide. The bottling is the process of extracting the flavor and aroma of the beer.",
+    "output": "The beer brewing process typically consists of the following steps: malting, mashing, lautering, boiling, cooling, fermentation, and packaging. Malting involves germinating barley grains and activating enzymes to break down starch. Mashing converts malt starches into sugars. Lautering is a filtration process that separates the extract from the grains. Boiling sterilizes the beer and removes unwanted bacteria. Cooling prepares the beer for fermentation. Fermentation is a biological process which converts sugars into alcohol. Packaging involves bottling, canning, or kegging the beer."
+  },
+  {
+    "input": "",
+    "instruction": "Design an interesting architectural space.",
+    "model_response": "The design of the space should be interesting and unique. It should be filled with interesting and unique elements, such as a large, open-plan living room, a large fireplace, and a large, open-plan kitchen. The walls should be bright and inviting, and the furniture should be in a nice, modern style. The windows should be large and clear, and the lighting should be bright and illuminating.",
+    "output": "A design for an interesting architectural space could include natural lighting, plenty of windows that capture views of the outdoors, flexible open spaces that can be adapted to different usages, indoor gardens, air circulation systems to ensure optimal air quality, and comfortable furniture and decor to create a calming atmosphere."
+  },
+  {
+    "input": "A struggling doctor arrives in a small town to work in a humble clinic for the locals.",
+    "instruction": "For a given story extract the main characters.",
+    "model_response": "The main characters in the story are the doctor and the locals.",
+    "output": "The main characters in the story are a struggling doctor and the locals."
+  },
+  {
+    "input": "",
+    "instruction": "Explain the concept of multiple inheritance in an object-oriented programming language.",
+    "model_response": "In object-oriented programming, multiple inheritance is a concept that allows objects to be created and modified by multiple people. This allows objects to be created and modified by multiple people, and allows for more complex objects such as databases and applications. Multiple inheritance allows objects to be created and modified by multiple people, and allows for more complex objects such as databases and applications.",
+    "output": "Multiple inheritance is a feature in an object-oriented programming language that enables one class to inherit characteristics from two or more classes. This means that the class derived from multiple inheritance can access the members of all the super-classes as if they were inherited directly from a single super-class. The multiple inheritance mechanism can also enable the programmer to create objects that can inherit behaviors from existing objects."
+  },
+  {
+    "input": "",
+    "instruction": "Design an outfit with the color green.",
+    "model_response": "A green outfit would be a great choice for a casual day. It would be comfortable and stylish, and it would be a great way to start a conversation with someone new.",
+    "output": "A green outfit could include a white tee, a pair of olive green cargo pants, a green field jacket, a gray wool beanie, and some white sneakers."
+  },
+  {
+    "input": "",
+    "instruction": "Customize a recipe for crunchy pancakes.",
+    "model_response": "Ingredients:\n- 2 cups all-purpose flour\n- 1 teaspoon baking powder\n- 1 teaspoon salt\n- 1/2 cup butter, softened\n- 1/2 cup milk\n- 1/2 cup sugar\n- 1/2 cup vegetable oil\n- 1/2 cup milk\n- 1 egg\n- 1 teaspoon vanilla extract\n- 1/2 cup chopped fresh herbs\n- 1/2 cup chopped fresh cilantro\n- 1/2 cup chopped fresh parsley\n- 1/2 cup chopped fresh basil\n- 1/2 cup chopped fresh cilantro, chopped\n- 1/2 cup chopped fresh parsley, chopped\n- 1/2 cup chopped fresh cilantro, chopped\n- 1/2 cup chopped fresh parsley, chopped\n- 1/2 cup chopped fresh cilantro, chopped\n- 1/2 cup chopped fresh cilantro, chopped\n- 1/2 cup chopped fresh cilantro, chopped\n- 1/2 cup chopped fresh cilantro, chopped\n- 1/2 cup chopped fresh cilantro, chopped\n- 1/2 cup chopped fresh cilantro, chopped\n- 1/2 cup chopped fresh cilantro, chopped\n- 1/2 cup chopped fresh cilantro,",
+    "output": "This recipe for crunchy pancakes calls for 2 cups of all-purpose flour, 2 eggs, 1 cup of whole milk, 2 tablespoons of vegetable oil, 1 teaspoon of granulated sugar, 1 teaspoon of baking powder, and a pinch of salt. Start by mixing the dry ingredients (flour, sugar, baking powder and salt) together in a bowl. Beat the eggs in a separate bowl, then lightly whisk in the milk and oil. Finally, add the wet ingredients to the dry ingredients and mix until no large lumps remain. Cook the pancakes in a greased skillet over medium-high heat, flipping once until golden brown."
+  }
+]
