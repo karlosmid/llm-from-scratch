@@ -39,7 +39,7 @@ defmodule LlmScratch.MultiheadAttention do
 
   import Nx.Defn
 
-  alias LlmScratch.SelfAttentionV2
+  alias LlmScratch.{LinearWithLoRA, SelfAttentionV2}
 
   defstruct [
     :w_q,
@@ -268,13 +268,17 @@ defmodule LlmScratch.MultiheadAttention do
     |> SelfAttentionV2.dense_project_defn(out_proj)
   end
 
-  defnp dense_project_defn(inputs, %{kernel: kernel, bias: bias}, use_bias) do
-    projected = Nx.dot(inputs, [-1], kernel, [0])
-
-    if use_bias do
-      Nx.add(projected, bias)
+  deftransformp dense_project_defn(inputs, layer, use_bias) do
+    if match?(%LinearWithLoRA{}, layer) do
+      LinearWithLoRA.forward_defn(layer, inputs)
     else
-      projected
+      projected = Nx.dot(inputs, [-1], layer.kernel, [0])
+
+      if use_bias do
+        Nx.add(projected, layer.bias)
+      else
+        projected
+      end
     end
   end
 

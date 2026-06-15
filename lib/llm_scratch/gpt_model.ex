@@ -21,12 +21,13 @@ defmodule LlmScratch.GPTModel do
     DummyLayerNorm,
     EmbeddingNative,
     GPTConfig,
+    LinearWithLoRA,
     MultiheadAttention,
     SelfAttentionV2,
     TransformerBlock
   }
 
-  @trainable_fields [:tok_emb, :pos_emb, :trf_blocks, :final_norm, :out_head]
+  @trainable_fields [:tok_emb, :pos_emb, :trf_blocks, :final_norm, :out_head, :lora]
 
   defstruct [
     :cfg,
@@ -109,7 +110,8 @@ defmodule LlmScratch.GPTModel do
 
     * `model` - `%LlmScratch.GPTModel{}` to update.
     * `fields` - list of trainable top-level layer names. Accepted fields are
-      `:tok_emb`, `:pos_emb`, `:trf_blocks`, `:final_norm`, and `:out_head`.
+      `:tok_emb`, `:pos_emb`, `:trf_blocks`, `:final_norm`, `:out_head`, and
+      `:lora`.
 
   This is useful after calling `freeze/1`, for example to train only a newly
   added classification head.
@@ -253,7 +255,7 @@ defmodule LlmScratch.GPTModel do
 
   @spec total_parameters(t()) :: non_neg_integer()
   @doc """
-  Counts all trainable parameters in the GPT model.
+  Counts all parameters in the GPT model.
 
   The count includes token embeddings, positional embeddings, every
   transformer block, the final layer norm, and the output projection.
@@ -265,6 +267,26 @@ defmodule LlmScratch.GPTModel do
     |> Kernel.+(Enum.reduce(model.trf_blocks, 0, &(&2 + transformer_block_parameters(&1))))
     |> Kernel.+(layer_norm_parameters(model.final_norm))
     |> Kernel.+(dense_parameters(model.out_head, Map.has_key?(model.out_head, :bias)))
+  end
+
+  @spec trainable_parameters(t()) :: non_neg_integer()
+  @doc """
+  Counts parameters marked as trainable by the model metadata.
+
+  Nx tensors do not expose PyTorch's mutable `requires_grad` flag, so
+  `freeze/1`, `unfreeze/1`, and `set_trainable/2` store that information in
+  `model.trainable`. This function mirrors the book's
+  `sum(p.numel() for p in model.parameters() if p.requires_grad)` by counting
+  only the fields currently selected for optimization.
+  """
+  def trainable_parameters(%__MODULE__{trainable: :all} = model), do: total_parameters(model)
+
+  def trainable_parameters(%__MODULE__{trainable: []}), do: 0
+
+  def trainable_parameters(%__MODULE__{trainable: fields} = model) when is_list(fields) do
+    fields
+    |> Enum.uniq()
+    |> Enum.reduce(0, fn field, total -> total + trainable_field_parameters(model, field) end)
   end
 
   @spec transformer_block_parameters(map()) :: non_neg_integer()
@@ -313,6 +335,54 @@ defmodule LlmScratch.GPTModel do
   """
   def tensor_parameters(tensor), do: Nx.size(tensor)
 
+  defp trainable_field_parameters(model, :tok_emb), do: tensor_parameters(model.tok_emb.weight)
+
+  defp trainable_field_parameters(model, :pos_emb), do: tensor_parameters(model.pos_emb.weight)
+
+  defp trainable_field_parameters(model, :trf_blocks) do
+    Enum.reduce(model.trf_blocks, 0, &(&2 + transformer_block_parameters(&1)))
+  end
+
+  defp trainable_field_parameters(model, :final_norm), do: layer_norm_parameters(model.final_norm)
+
+  defp trainable_field_parameters(model, :out_head) do
+    dense_parameters(model.out_head, Map.has_key?(model.out_head, :bias))
+  end
+
+  defp trainable_field_parameters(model, :lora), do: lora_parameters(model)
+
+  defp trainable_field_parameters(model, {:trf_block, index}) do
+    model.trf_blocks
+    |> Enum.at(index)
+    |> transformer_block_parameters()
+  end
+
+  defp lora_parameters(%__MODULE__{} = model) do
+    Enum.reduce(model.trf_blocks, 0, &(&2 + lora_parameters(&1))) +
+      lora_parameters(model.out_head)
+  end
+
+  defp lora_parameters(%TransformerBlock{} = block) do
+    lora_parameters(block.att) + lora_parameters(block.ff)
+  end
+
+  defp lora_parameters(%MultiheadAttention{} = attention) do
+    lora_parameters(attention.w_q) +
+      lora_parameters(attention.w_k) +
+      lora_parameters(attention.w_v) +
+      lora_parameters(attention.out_proj)
+  end
+
+  defp lora_parameters(%LlmScratch.FeedForward{} = feed_forward) do
+    lora_parameters(feed_forward.layers.first) + lora_parameters(feed_forward.layers.second)
+  end
+
+  defp lora_parameters(%LinearWithLoRA{} = layer) do
+    tensor_parameters(layer.lora.a) + tensor_parameters(layer.lora.b)
+  end
+
+  defp lora_parameters(_other), do: 0
+
   defp transformer_blocks(cfg, _seed, _norm_eps) when cfg.n_layers == 0, do: []
 
   defp transformer_blocks(cfg, seed, norm_eps) do
@@ -336,14 +406,19 @@ defmodule LlmScratch.GPTModel do
 
   defp linear(x, %{kernel: kernel, bias: bias}), do: Nx.dot(x, [-1], kernel, [0]) |> Nx.add(bias)
   defp linear(x, %{kernel: kernel}), do: Nx.dot(x, [-1], kernel, [0])
+  defp linear(x, %LinearWithLoRA{} = layer), do: LinearWithLoRA.forward(layer, x)
 
   deftransformp linear_defn(x, layer) do
-    y = Nx.dot(x, [-1], layer.kernel, [0])
-
-    if Map.has_key?(layer, :bias) do
-      Nx.add(y, layer.bias)
+    if match?(%LinearWithLoRA{}, layer) do
+      LinearWithLoRA.forward_defn(layer, x)
     else
-      y
+      y = Nx.dot(x, [-1], layer.kernel, [0])
+
+      if Map.has_key?(layer, :bias) do
+        Nx.add(y, layer.bias)
+      else
+        y
+      end
     end
   end
 
@@ -357,6 +432,12 @@ defmodule LlmScratch.GPTModel do
     do: tensor_parameters(kernel) + tensor_parameters(bias)
 
   defp dense_parameters(%{kernel: kernel}, false), do: tensor_parameters(kernel)
+
+  defp dense_parameters(%LinearWithLoRA{} = layer, _bias) do
+    dense_parameters(layer.linear, Map.has_key?(layer.linear, :bias)) +
+      tensor_parameters(layer.lora.a) +
+      tensor_parameters(layer.lora.b)
+  end
 
   defp positional_indices(seq_len), do: Nx.iota({seq_len}, type: {:s, 64})
 

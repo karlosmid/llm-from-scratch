@@ -11,6 +11,8 @@ defmodule LlmScratch.SelfAttentionV2 do
 
   import Nx.Defn
 
+  alias LlmScratch.LinearWithLoRA
+
   defstruct [:w_q, :w_k, :w_v, :d_in, :d_out, :seed, :qkv_bias]
 
   @type dense_weights :: %{kernel: Nx.Tensor.t(), bias: Nx.Tensor.t()}
@@ -154,11 +156,19 @@ defmodule LlmScratch.SelfAttentionV2 do
     dense_project_defn(inputs, %{kernel: kernel, bias: bias})
   end
 
+  def dense_project(inputs, %LinearWithLoRA{} = layer) do
+    LinearWithLoRA.forward(layer, inputs)
+  end
+
   @doc """
   Defn-compatible dense projection over the last axis.
   """
-  defn dense_project_defn(inputs, %{kernel: kernel, bias: bias}) do
-    Nx.add(Nx.dot(inputs, [-1], kernel, [0]), bias)
+  deftransform dense_project_defn(inputs, layer) do
+    if match?(%LinearWithLoRA{}, layer) do
+      LinearWithLoRA.forward_defn(layer, inputs)
+    else
+      Nx.add(Nx.dot(inputs, [-1], layer.kernel, [0]), layer.bias)
+    end
   end
 
   defp normalize_seed(nil), do: System.unique_integer([:positive])

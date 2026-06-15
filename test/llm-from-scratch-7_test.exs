@@ -9,8 +9,10 @@ defmodule LlmFromScratch7Test do
     FineTuneDataLoader,
     GPTConfig,
     GPT2OpenAI,
+    GPTModel,
     InstructionDataset,
     InstructionsEvaluation,
+    LoRAUtils,
     LossUtils,
     ModelCheckpoint,
     OllamaUtils,
@@ -1175,6 +1177,35 @@ defmodule LlmFromScratch7Test do
     assert length(scores) == 110
     assert length(scores) == length(enriched_data)
     assert_in_delta average_score, 50.54, 0.4
+  end
+
+  @tag :download
+  @tag timeout: 1_800_000
+  test "exercise 7.4 freezes GPT-2 124M trainable parameters and adds LoRA adapters" do
+    device = use_accelerated_backend()
+
+    model =
+      "124M"
+      |> GPT2OpenAI.load_model(models_dir: "gpt2")
+      |> GPTModel.replace_out_head(2, seed: 123, bias: true)
+      |> Nx.backend_transfer(device)
+
+    total_params_before = GPTModel.trainable_parameters(model)
+
+    frozen_model = GPTModel.freeze(model)
+    total_params_after = GPTModel.trainable_parameters(frozen_model)
+
+    lora_model =
+      LoRAUtils.replace_linear_with_lora(frozen_model, 16, 16, include_output_head: true)
+
+    total_lora_params = GPTModel.trainable_parameters(lora_model)
+
+    assert total_params_before == GPTModel.total_parameters(model)
+    assert total_params_before == 124_441_346
+    assert GPTModel.frozen?(frozen_model)
+    assert total_params_after == 0
+    assert lora_model.trainable == [:lora]
+    assert total_lora_params == 2_666_528
   end
 
   defp binary_instruction_collate(batch) do

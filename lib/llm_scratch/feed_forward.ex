@@ -21,7 +21,7 @@ defmodule LlmScratch.FeedForward do
 
   import Nx.Defn
 
-  alias LlmScratch.{GELU, GPTConfig, SelfAttentionV2}
+  alias LlmScratch.{GELU, GPTConfig, LinearWithLoRA, SelfAttentionV2}
 
   defstruct [:emb_dim, :layers]
 
@@ -121,8 +121,12 @@ defmodule LlmScratch.FeedForward do
       iex> LlmScratch.FeedForward.linear_defn(x, layer) |> Nx.to_flat_list()
       [6.1, 5.9]
   """
-  defn linear_defn(x, %{kernel: kernel, bias: bias}) do
-    Nx.add(Nx.dot(x, [-1], kernel, [0]), bias)
+  deftransform linear_defn(x, layer) do
+    if match?(%LinearWithLoRA{}, layer) do
+      LinearWithLoRA.forward_defn(layer, x)
+    else
+      Nx.add(Nx.dot(x, [-1], layer.kernel, [0]), layer.bias)
+    end
   end
 
   defp emb_dim_from_cfg!(%GPTConfig{emb_dim: emb_dim}), do: validate_emb_dim!(emb_dim)

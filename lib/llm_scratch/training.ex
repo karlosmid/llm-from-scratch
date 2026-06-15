@@ -1026,11 +1026,40 @@ defmodule LlmScratch.Training do
   defp gpt_model_field_tensors(model, :out_head),
     do: dense_tensors(model.out_head, Map.has_key?(model.out_head, :bias))
 
+  defp gpt_model_field_tensors(model, :lora), do: lora_tensors(model)
+
   defp gpt_model_field_tensors(model, {:trf_block, index}),
     do: model.trf_blocks |> Enum.at(index) |> trainable_tensors()
 
+  defp dense_tensors(%LlmScratch.LinearWithLoRA{} = layer, _bias) do
+    dense_tensors(layer.linear, Map.has_key?(layer.linear, :bias)) ++ lora_tensors(layer)
+  end
+
   defp dense_tensors(%{kernel: kernel, bias: bias}, true), do: [kernel, bias]
   defp dense_tensors(%{kernel: kernel}, false), do: [kernel]
+
+  defp lora_tensors(%GPTModel{} = model) do
+    Enum.flat_map(model.trf_blocks, &lora_tensors/1) ++ lora_tensors(model.out_head)
+  end
+
+  defp lora_tensors(%LlmScratch.TransformerBlock{} = block) do
+    lora_tensors(block.att) ++ lora_tensors(block.ff)
+  end
+
+  defp lora_tensors(%LlmScratch.MultiheadAttention{} = attention) do
+    lora_tensors(attention.w_q) ++
+      lora_tensors(attention.w_k) ++
+      lora_tensors(attention.w_v) ++
+      lora_tensors(attention.out_proj)
+  end
+
+  defp lora_tensors(%LlmScratch.FeedForward{} = feed_forward) do
+    lora_tensors(feed_forward.layers.first) ++ lora_tensors(feed_forward.layers.second)
+  end
+
+  defp lora_tensors(%LlmScratch.LinearWithLoRA{} = layer), do: [layer.lora.a, layer.lora.b]
+
+  defp lora_tensors(_other), do: []
 
   defp put_trainable_tensors(%LlmScratch.EmbeddingNative{} = embedding, [weight | rest]) do
     {%{embedding | weight: weight}, rest}
@@ -1132,6 +1161,13 @@ defmodule LlmScratch.Training do
     {%{model | out_head: out_head}, tensors}
   end
 
+  defp put_gpt_model_field_tensors(model, :lora, tensors) do
+    {trf_blocks, tensors} = Enum.map_reduce(model.trf_blocks, tensors, &put_lora_tensors/2)
+    {out_head, tensors} = put_lora_tensors(model.out_head, tensors)
+
+    {%{model | trf_blocks: trf_blocks, out_head: out_head}, tensors}
+  end
+
   defp put_gpt_model_field_tensors(model, {:trf_block, index}, tensors) do
     {block, tensors} =
       model.trf_blocks
@@ -1141,6 +1177,15 @@ defmodule LlmScratch.Training do
     {%{model | trf_blocks: List.replace_at(model.trf_blocks, index, block)}, tensors}
   end
 
+  defp put_dense_tensors(%LlmScratch.LinearWithLoRA{} = layer, _bias, tensors) do
+    {linear, tensors} =
+      put_dense_tensors(layer.linear, Map.has_key?(layer.linear, :bias), tensors)
+
+    {lora, tensors} = put_lora_tensors(layer.lora, tensors)
+
+    {%{layer | linear: linear, lora: lora}, tensors}
+  end
+
   defp put_dense_tensors(%{kernel: _kernel, bias: _bias} = dense, true, [kernel, bias | rest]) do
     {%{dense | kernel: kernel, bias: bias}, rest}
   end
@@ -1148,6 +1193,46 @@ defmodule LlmScratch.Training do
   defp put_dense_tensors(%{kernel: _kernel} = dense, false, [kernel | rest]) do
     {%{dense | kernel: kernel}, rest}
   end
+
+  defp put_lora_tensors(%LlmScratch.TransformerBlock{} = block, tensors) do
+    {att, tensors} = put_lora_tensors(block.att, tensors)
+    {ff, tensors} = put_lora_tensors(block.ff, tensors)
+
+    {%{block | att: att, ff: ff}, tensors}
+  end
+
+  defp put_lora_tensors(%LlmScratch.MultiheadAttention{} = attention, tensors) do
+    {w_q, tensors} = put_lora_tensors(attention.w_q, tensors)
+    {w_k, tensors} = put_lora_tensors(attention.w_k, tensors)
+    {w_v, tensors} = put_lora_tensors(attention.w_v, tensors)
+    {out_proj, tensors} = put_lora_tensors(attention.out_proj, tensors)
+
+    {
+      %{attention | w_q: w_q, w_k: w_k, w_v: w_v, out_proj: out_proj},
+      tensors
+    }
+  end
+
+  defp put_lora_tensors(%LlmScratch.FeedForward{} = feed_forward, tensors) do
+    {first, tensors} = put_lora_tensors(feed_forward.layers.first, tensors)
+    {second, tensors} = put_lora_tensors(feed_forward.layers.second, tensors)
+
+    {
+      %{feed_forward | layers: %{feed_forward.layers | first: first, second: second}},
+      tensors
+    }
+  end
+
+  defp put_lora_tensors(%LlmScratch.LinearWithLoRA{} = layer, tensors) do
+    {lora, tensors} = put_lora_tensors(layer.lora, tensors)
+    {%{layer | lora: lora}, tensors}
+  end
+
+  defp put_lora_tensors(%LlmScratch.LoRALayer{} = lora, [a, b | rest]) do
+    {%{lora | a: a, b: b}, rest}
+  end
+
+  defp put_lora_tensors(other, tensors), do: {other, tensors}
 
   defp maybe_transfer_model(model, device) when device in [nil, :default], do: model
   defp maybe_transfer_model(model, device), do: Nx.backend_transfer(model, device)
